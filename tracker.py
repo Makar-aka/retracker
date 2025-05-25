@@ -1,6 +1,5 @@
 import time
 import sqlite3
-import mysql.connector
 import json
 import socket
 import re

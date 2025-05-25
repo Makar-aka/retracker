@@ -1,6 +1,6 @@
 from flask import Flask, request, Response
 from tracker import *
-from db_handlers import SQLiteCommon, MySQLCommon
+from db_handlers import SQLiteCommon
 import configparser
 from logging.handlers import RotatingFileHandler
 import logging
@@ -122,27 +122,23 @@ else:
 
 # Инициализация БД
 logger.info(f"Инициализация БД типа: {tr_cfg.tr_db_type}")
-if tr_cfg.tr_db_type == 'mysql':
-    db = MySQLCommon(tr_cfg.tr_db)
-elif tr_cfg.tr_db_type == 'sqlite':
-    default_cfg = {
-        'db_file_path': os.path.join(data_dir, 'tracker.sqlite'),
-        'table_name': 'tracker',
-        'table_schema': '''CREATE TABLE IF NOT EXISTS tracker (
-            info_hash CHAR(20),
-            ip CHAR(8),
-            port INTEGER,
-            left INTEGER DEFAULT 0,
-            update_time INTEGER,
-            PRIMARY KEY (info_hash, ip, port)
-        )''',
-        'pconnect': True,
-        'con_required': True,
-        'log_name': 'SQLite'
-    }
-    db = SQLiteCommon({**default_cfg, **tr_cfg.tr_db})
-    logger.info(f"База данных SQLite инициализирована: {default_cfg['db_file_path']}")
-else:
+if tr_cfg.tr_db_type != 'sqlite':
+    raise ValueError('Only SQLite database is supported')
+
+default_cfg = {
+    'db_file_path': os.path.join(data_dir, 'tracker.sqlite'),
+    'table_name': 'tracker',
+    'table_schema': '''CREATE TABLE IF NOT EXISTS tracker (
+        info_hash CHAR(20),
+        ip CHAR(8),
+        port INTEGER,
+        left INTEGER DEFAULT 0,
+        update_time INTEGER,
+        PRIMARY KEY (info_hash, ip, port)
+    )'''
+}
+db = SQLiteCommon({**default_cfg, **tr_cfg.tr_db})
+logger.info(f"База данных SQLite инициализирована: {default_cfg['db_file_path']}")
     raise ValueError('Unsupported DB type')
 
 @app.route('/status')
