@@ -11,23 +11,30 @@ import time
 import json
 import datetime
 
+# --- Универсальные пути ---
+def get_path(docker_path, local_path):
+    return docker_path if os.path.exists(docker_path) else local_path
+
+CONFIG_PATH = get_path('/config/config.ini', os.path.join('config', 'config.ini'))
+DATA_DIR = get_path('/data', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data'))
+TEMPLATES_DIR = get_path('/templates', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
+
 # Загрузка конфигурации
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read(CONFIG_PATH)
 SECRET_KEY = config.get('FLASK', 'secret_key', fallback='your-very-secret-key')
 
-# Создаем приложение Flask
-app = Flask(__name__)
+# Создаем приложение Flask с универсальным путём к шаблонам
+app = Flask(__name__, template_folder=TEMPLATES_DIR)
 app.secret_key = SECRET_KEY
 app.start_time = time.time()
 
 # Создание директории для данных
-data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
-if not os.path.exists(data_dir):
-    os.makedirs(data_dir)
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
 
 # Настройка логирования
-log_file = config['LOGGING'].get('log_file', 'data/tracker.log')
+log_file = config['LOGGING'].get('log_file', os.path.join(DATA_DIR, 'tracker.log'))
 log_dir = os.path.dirname(log_file)
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
@@ -46,7 +53,6 @@ if config['LOGGING'].getboolean('clear_on_start', False) and os.path.exists(log_
 # Настройка обработчиков логов
 handlers = []
 
-# Файловый обработчик с ротацией
 file_handler = RotatingFileHandler(
     filename=log_file,
     maxBytes=int(config['LOGGING'].get('max_bytes', 5242880)),
@@ -56,13 +62,11 @@ file_handler = RotatingFileHandler(
 file_handler.setFormatter(logging.Formatter(config['LOGGING'].get('format', '%(asctime)s [%(levelname)s] %(message)s')))
 handlers.append(file_handler)
 
-# Консольный обработчик если включен
 if config['LOGGING'].getboolean('console_output', True):
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(logging.Formatter(config['LOGGING'].get('format', '%(asctime)s [%(levelname)s] %(message)s')))
     handlers.append(console_handler)
 
-# Применяем настройки логирования
 logging.basicConfig(
     level=getattr(logging, config['LOGGING'].get('level', 'INFO').upper()),
     handlers=handlers
@@ -80,12 +84,10 @@ logger.info(f"Доверенные прокси: {TRUSTED_PROXIES}")
 def get_real_ip():
     """Получает реальный IP адрес клиента с учетом режима работы"""
     if mode == 'proxy':
-        # Логируем заголовки в режиме дебага
         logger.debug("Headers: %s", dict(request.headers))
         logger.debug("Remote addr: %s", request.remote_addr)
 
         if request.remote_addr in TRUSTED_PROXIES:
-            # Пробуем получить IP из заголовков
             if config['TRACKER'].getboolean('use_x_real_ip', True):
                 real_ip = request.headers.get('X-Real-IP')
                 if real_ip and verify_ip(real_ip):
@@ -132,7 +134,7 @@ if tr_cfg.tr_db_type != 'sqlite':
     raise ValueError('Only SQLite database is supported')
 
 default_cfg = {
-    'db_file_path': os.path.join(data_dir, 'tracker.sqlite'),
+    'db_file_path': os.path.join(DATA_DIR, 'tracker.sqlite'),
     'table_name': 'tracker',
     'table_schema': '''CREATE TABLE IF NOT EXISTS tracker (
         info_hash CHAR(20) NOT NULL,
@@ -389,27 +391,23 @@ def stats():
         ), 500
 
 if __name__ == '__main__':
-    # Проверка корректности хоста
-    host = config['TRACKER'].get('host', '127.0.0.1')
+    host = config['TRACKER'].get('host', '0.0.0.0')
     port = config['TRACKER'].getint('port', 8080)
-    
+
     def is_valid_ip(ip):
         try:
-            # Проверяем является ли строка валидным IP адресом
             parts = ip.split('.')
             return len(parts) == 4 and all(0 <= int(part) <= 255 for part in parts)
         except (AttributeError, TypeError, ValueError):
             return False
 
-    # Проверяем хост
     if host != '0.0.0.0' and not is_valid_ip(host):
         try:
-            # Пробуем DNS резолвинг только если это не IP адрес
             socket.gethostbyname(host)
         except socket.gaierror:
             logger.warning(f"Некорректный хост: {host}, использую localhost")
             host = 'localhost'
-    
+
     logger.info(f"Запуск сервера на {host}:{port}")
     app.run(
         host=host,
