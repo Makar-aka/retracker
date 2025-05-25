@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   tracker:
-    build: .
+    build:
+      context: https://github.com/Makar-aka/retracker.git
+      dockerfile: Dockerfile
     container_name: tracker
     restart: unless-stopped
     volumes:
