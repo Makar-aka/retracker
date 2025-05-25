@@ -4,6 +4,7 @@ from db_handlers import SQLiteCommon, MySQLCommon
 import configparser
 import os
 import logging
+import urllib.parse
 
 # Настройка логирования
 logging.basicConfig(
@@ -74,42 +75,158 @@ else:
 
 @app.route('/announce')
 def announce():
-    # Garbage collector
-    if tr_cfg.run_gc_key in request.args:
-        logger.info("Запущена сборка мусора")
-        announce_interval = max(int(tr_cfg.announce_interval), 60)
-        expire_factor = max(float(tr_cfg.peer_expire_factor), 2)
-        peer_expire_time = TIMENOW - int(announce_interval * expire_factor)
-
-        db.query(f"DELETE FROM tracker WHERE update_time < {peer_expire_time}")
-        
-        if hasattr(tr_cache, 'gc'):
-            tr_cache.gc()
-        
-        return Response("OK", mimetype='text/plain')
-
-    # Получение и проверка параметров
-    info_hash = request.args.get('info_hash')
-    if not info_hash or len(info_hash) != 20:
-        logger.warning(f"Получен некорректный info_hash от {request.remote_addr}")
-        return Response(bencode({'failure reason': 'Invalid info_hash'}), mimetype='text/plain')
-
     try:
-        port = int(request.args.get('port', 0))
-    except ValueError:
-        port = 0
-    
-    if not 0 <= port <= 0xFFFF:
-        logger.warning(f"Получен некорректный порт от {request.remote_addr}: {port}")
-        return Response(bencode({'failure reason': 'Invalid port'}), mimetype='text/plain')
+        # Garbage collector
+        if tr_cfg.run_gc_key in request.args:
+            logger.info("Запущена сборка мусора")
+            announce_interval = max(int(tr_cfg.announce_interval), 60)
+            expire_factor = max(float(tr_cfg.peer_expire_factor), 2)
+            peer_expire_time = TIMENOW - int(announce_interval * expire_factor)
 
-    # Обработка IP
-    ip = request.remote_addr
-    logger.debug(f"Запрос announce от {ip}:{port}")
-    
-    # ... остальная логика обработки запроса ...
+            db.query(f"DELETE FROM tracker WHERE update_time < {peer_expire_time}")
+            
+            if hasattr(tr_cache, 'gc'):
+                tr_cache.gc()
+            
+            return Response("OK", mimetype='text/plain')
 
-    return Response(bencode(output), mimetype='text/plain')
+        # Получение и проверка параметров
+        info_hash = request.args.get('info_hash', '')
+        if info_hash:
+            try:
+                info_hash = urllib.parse.unquote_to_bytes(info_hash)
+            except Exception as e:
+                logger.error(f"Ошибка декодирования info_hash: {e}")
+                return Response(bencode({'failure reason': 'Invalid info_hash encoding'}), mimetype='text/plain')
+
+        if not info_hash or len(info_hash) != 20:
+            logger.warning(f"Получен некорректный info_hash от {request.remote_addr}")
+            return Response(bencode({'failure reason': 'Invalid info_hash'}), mimetype='text/plain')
+
+        try:
+            port = int(request.args.get('port', 0))
+        except ValueError:
+            port = 0
+        
+        if not 0 <= port <= 0xFFFF:
+            logger.warning(f"Получен некорректный порт от {request.remote_addr}: {port}")
+            return Response(bencode({'failure reason': 'Invalid port'}), mimetype='text/plain')
+
+        # Обработка IP
+        ip = request.remote_addr
+        if not ip or not verify_ip(ip):
+            logger.warning(f"Некорректный IP адрес: {ip}")
+            return Response(bencode({'failure reason': 'Invalid IP'}), mimetype='text/plain')
+
+        # Проверка reported_ip если разрешено
+        if not tr_cfg.ignore_reported_ip and 'ip' in request.args:
+            reported_ip = request.args.get('ip')
+            if tr_cfg.verify_reported_ip and verify_ip(reported_ip):
+                ip = reported_ip
+
+        # Дополнительные параметры
+        event = request.args.get('event', '')
+        uploaded = int(request.args.get('uploaded', 0))
+        downloaded = int(request.args.get('downloaded', 0))
+        left = int(request.args.get('left', 0))
+        compact = int(request.args.get('compact', 0))
+        no_peer_id = int(request.args.get('no_peer_id', 0))
+        numwant = min(int(request.args.get('numwant', tr_cfg.numwant)), 200)
+
+        # Кэширование списка пиров
+        cache_key = f"{PEERS_LIST_PREFIX}{info_hash.hex()}"
+        peers_list = tr_cache.get(cache_key) if tr_cache.used else False
+
+        if not peers_list:
+            # Обновляем информацию о пире в БД
+            db.query(
+                f"REPLACE INTO tracker (info_hash, ip, port, update_time) VALUES (?, ?, ?, ?)",
+                (info_hash, encode_ip(ip), port, TIMENOW)
+            )
+
+            # Получаем список активных пиров
+            peers_query = db.fetch_rowset(
+                f"SELECT ip, port FROM tracker WHERE info_hash = ? AND update_time > ? ORDER BY {db.random_fn} LIMIT ?",
+                (info_hash, TIMENOW - tr_cfg.announce_interval, numwant)
+            )
+
+            peers_list = []
+            complete = incomplete = 0
+
+            for peer in peers_query:
+                if peer.get('left', 0) == 0:
+                    complete += 1
+                else:
+                    incomplete += 1
+                
+                peer_data = {
+                    'ip': decode_ip(peer['ip']),
+                    'port': peer['port']
+                }
+                if not no_peer_id and 'peer_id' in peer:
+                    peer_data['peer_id'] = peer['peer_id']
+                peers_list.append(peer_data)
+
+            # Кэшируем результат
+            if tr_cache.used:
+                tr_cache.set(cache_key, {
+                    'peers': peers_list,
+                    'complete': complete,
+                    'incomplete': incomplete
+                }, PEERS_LIST_EXPIRE)
+
+        # Формируем ответ
+        output = {
+            'interval': tr_cfg.announce_interval,
+            'min interval': tr_cfg.announce_interval,
+            'complete': peers_list.get('complete', 0) if isinstance(peers_list, dict) else 0,
+            'incomplete': peers_list.get('incomplete', 0) if isinstance(peers_list, dict) else 0,
+            'peers': peers_list.get('peers', []) if isinstance(peers_list, dict) else peers_list
+        }
+
+        logger.info(f"Обработан announce запрос от {ip}:{port} для {info_hash.hex()}")
+        return Response(bencode(output), mimetype='text/plain')
+
+    except Exception as e:
+        logger.error(f"Ошибка обработки announce запроса: {e}")
+        return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
+
+@app.route('/scrape')
+def scrape():
+    try:
+        info_hashes = request.args.getlist('info_hash')
+        if not info_hashes:
+            return Response(bencode({'failure reason': 'No info_hash provided'}), mimetype='text/plain')
+
+        files = {}
+        for info_hash in info_hashes:
+            try:
+                info_hash = urllib.parse.unquote_to_bytes(info_hash)
+                if len(info_hash) != 20:
+                    continue
+
+                # Получаем статистику
+                stats = db.fetch_rowset(
+                    f"SELECT COUNT(*) as total, SUM(CASE WHEN left = 0 THEN 1 ELSE 0 END) as complete FROM tracker WHERE info_hash = ?",
+                    (info_hash,)
+                )
+
+                if stats:
+                    files[info_hash] = {
+                        'complete': stats[0].get('complete', 0) or 0,
+                        'downloaded': 0,  # Не храним эту информацию
+                        'incomplete': stats[0].get('total', 0) - (stats[0].get('complete', 0) or 0)
+                    }
+
+            except Exception as e:
+                logger.error(f"Ошибка обработки info_hash в scrape: {e}")
+                continue
+
+        return Response(bencode({'files': files}), mimetype='text/plain')
+
+    except Exception as e:
+        logger.error(f"Ошибка обработки scrape запроса: {e}")
+        return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
 
 if __name__ == '__main__':
     host = config['TRACKER'].get('host', '0.0.0.0')
