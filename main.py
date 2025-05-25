@@ -139,8 +139,6 @@ default_cfg = {
 }
 db = SQLiteCommon({**default_cfg, **tr_cfg.tr_db})
 logger.info(f"База данных SQLite инициализирована: {default_cfg['db_file_path']}")
-else:
-    raise ValueError('Unsupported DB type')
 
 @app.route('/status')
 def status():
