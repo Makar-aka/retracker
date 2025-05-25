@@ -6,16 +6,16 @@ import socket
 import struct
 
 def decode_ip(ip_hex):
-    """Преобразует 8 символов hex в IP адрес"""
+    """РџСЂРµРѕР±СЂР°Р·СѓРµС‚ 8 СЃРёРјРІРѕР»РѕРІ hex РІ IP Р°РґСЂРµСЃ"""
     try:
-        # Преобразуем строку hex в байты и затем в IP
+        # РџСЂРµРѕР±СЂР°Р·СѓРµРј СЃС‚СЂРѕРєСѓ hex РІ Р±Р°Р№С‚С‹ Рё Р·Р°С‚РµРј РІ IP
         ip_bytes = bytes.fromhex(ip_hex)
         return socket.inet_ntoa(ip_bytes)
     except:
         return ip_hex
 
 def format_info_hash(info_hash):
-    """Преобразует бинарный info_hash в читаемый вид"""
+    """РџСЂРµРѕР±СЂР°Р·СѓРµС‚ Р±РёРЅР°СЂРЅС‹Р№ info_hash РІ С‡РёС‚Р°РµРјС‹Р№ РІРёРґ"""
     try:
         if isinstance(info_hash, bytes):
             return binascii.hexlify(info_hash).decode()
@@ -28,13 +28,13 @@ def view_db(db_path):
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         
-        # Показать схему таблицы
-        print("\nСхема таблицы:")
+        # РџРѕРєР°Р·Р°С‚СЊ СЃС…РµРјСѓ С‚Р°Р±Р»РёС†С‹
+        print("\nРЎС…РµРјР° С‚Р°Р±Р»РёС†С‹:")
         cursor = conn.execute("PRAGMA table_info(tracker)")
         for col in cursor:
             print(f"{col['name']}: {col['type']}")
         
-        # Показать статистику
+        # РџРѕРєР°Р·Р°С‚СЊ СЃС‚Р°С‚РёСЃС‚РёРєСѓ
         cursor = conn.execute("""
             SELECT 
                 COUNT(*) as total_peers,
@@ -46,15 +46,15 @@ def view_db(db_path):
         """)
         stats = dict(cursor.fetchone())
         
-        print("\nСтатистика:")
-        print(f"Всего пиров: {stats['total_peers']}")
-        print(f"Уникальных торрентов: {stats['total_torrents']}")
-        print(f"Уникальных IP: {stats['unique_ips']}")
-        print(f"Старейшая запись: {datetime.fromtimestamp(stats['oldest_update'])}")
-        print(f"Последнее обновление: {datetime.fromtimestamp(stats['latest_update'])}")
+        print("\nРЎС‚Р°С‚РёСЃС‚РёРєР°:")
+        print(f"Р’СЃРµРіРѕ РїРёСЂРѕРІ: {stats['total_peers']}")
+        print(f"РЈРЅРёРєР°Р»СЊРЅС‹С… С‚РѕСЂСЂРµРЅС‚РѕРІ: {stats['total_torrents']}")
+        print(f"РЈРЅРёРєР°Р»СЊРЅС‹С… IP: {stats['unique_ips']}")
+        print(f"РЎС‚Р°СЂРµР№С€Р°СЏ Р·Р°РїРёСЃСЊ: {datetime.fromtimestamp(stats['oldest_update'])}")
+        print(f"РџРѕСЃР»РµРґРЅРµРµ РѕР±РЅРѕРІР»РµРЅРёРµ: {datetime.fromtimestamp(stats['latest_update'])}")
         
-        # Показать последние записи
-        print("\nПоследние записи:")
+        # РџРѕРєР°Р·Р°С‚СЊ РїРѕСЃР»РµРґРЅРёРµ Р·Р°РїРёСЃРё
+        print("\nРџРѕСЃР»РµРґРЅРёРµ Р·Р°РїРёСЃРё:")
         cursor = conn.execute("""
             SELECT * FROM tracker 
             ORDER BY update_time DESC 
@@ -70,7 +70,7 @@ def view_db(db_path):
             print(f"Update Time: {datetime.fromtimestamp(row['update_time'])}")
             
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"РћС€РёР±РєР°: {e}")
     finally:
         if 'conn' in locals():
             conn.close()
