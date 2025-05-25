@@ -1,4 +1,4 @@
-from flask import Flask, request, Response, render_template, redirect, url_for
+from flask import Flask, request, Response, render_template, redirect, url_for, session, flash
 from tracker import *
 from db_handlers import SQLiteCommon
 import configparser
@@ -10,7 +10,12 @@ import socket
 import time
 import json
 import datetime
-import base64
+
+# --- Новый секретный ключ для сессий ---
+SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', 'your-very-secret-key')
+app = Flask(__name__)
+app.secret_key = SECRET_KEY
+app.start_time = time.time()
 
 # Создаем приложение Flask
 app = Flask(__name__)
@@ -310,32 +315,40 @@ def scrape():
         logger.error(f"Ошибка обработки scrape запроса: {e}")
         return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
 
-def check_basic_auth(auth_header):
-    """Проверка HTTP Basic Auth"""
-    if not auth_header or not auth_header.startswith('Basic '):
-        return False
-    try:
-        auth_decoded = base64.b64decode(auth_header.split(' ', 1)[1]).decode('utf-8')
-        # Формат: username:password
-        username, password = auth_decoded.split(':', 1)
-        # Можно задать username в config.ini, но обычно достаточно только пароля
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '')
+        password = request.form.get('password', '')
+        expected_username = config['STATS'].get('access_username')
         expected_password = config['STATS'].get('access_password')
-        # username можно не проверять или задать, например, 'admin'
-        return password == expected_password
-    except Exception:
-        return False
+        if username == expected_username and password == expected_password:
+            session['logged_in'] = True
+            return redirect(url_for('stats'))
+        else:
+            error = 'Неверный логин или пароль'
+    return render_template('login.html', error=error, current_year=datetime.datetime.now().year)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('Вы вышли из системы.')
+    return redirect(url_for('login'))
+
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 @app.route('/stat')
+@login_required
 def stats():
-    """Эндпоинт для отображения общей статистики сервера с HTTP Basic Auth"""
-    auth_header = request.headers.get('Authorization')
-    if not check_basic_auth(auth_header):
-        return Response(
-            'Требуется авторизация',
-            401,
-            {'WWW-Authenticate': 'Basic realm="Statistics"'}
-        )
-
+    """Эндпоинт для отображения общей статистики сервера (Flask-сессии)"""
     try:
         # Получаем общую статистику
         total_stats = db.query("""
