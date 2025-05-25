@@ -114,7 +114,6 @@ pip install -r requirements.txt
 ```sh
 python3 main.py
 ```
-3. Откройте http://localhost:8080/stat (или порт, указанный в config.ini)
 
 ---
 
