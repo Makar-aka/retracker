@@ -1,4 +1,4 @@
-from flask import Flask, request, Response, render_template_string, redirect, url_for
+from flask import Flask, request, Response, render_template, redirect, url_for
 from tracker import *
 from db_handlers import SQLiteCommon
 import configparser
