@@ -69,12 +69,37 @@ cp config/config_example.ini config/config.ini
 Все настройки — в `config/config.ini`.  
 Пример секций:
 ```ini
-[FLASK] secret_key = your-very-secret-key
-[LOGGING] log_file = tracker.log level = INFO format = %(asctime)s [%(levelname)s] %(message)s console_output = True max_bytes = 5242880 backup_count = 5 clear_on_start = False
-[TRACKER] host = 0.0.0.0 port = 8080 announce_interval = 1800 peer_expire_factor = 2 ignore_reported_ip = False verify_reported_ip = True allow_internal_ip = False numwant = 50 run_gc_key = gc
-[CACHE] type = sqlite
-[DB] type = sqlite
-[STATS] access_username = admin access_password = password
+[FLASK] 
+secret_key = ваш_рандомный_ключик_для_сессий_авторизации
+[LOGGING]
+log_file = tracker.log 
+level = INFO 
+format = %(asctime)s [%(levelname)s] %(message)s 
+console_output = True 
+max_bytes = 5242880 
+backup_count = 5 
+clear_on_start = False
+
+[TRACKER] 
+host = 0.0.0.0 
+port = 8080 
+announce_interval = 1800 
+peer_expire_factor = 2 
+ignore_reported_ip = False 
+verify_reported_ip = True 
+allow_internal_ip = False 
+numwant = 50 
+run_gc_key = gc
+
+[CACHE] 
+type = sqlite
+
+[DB] 
+type = sqlite
+
+[STATS] 
+access_username = admin 
+access_password = password
 ```
 
 ---
