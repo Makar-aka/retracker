@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Создание директории для базы данных
+data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+if not os.path.exists(data_dir):
+    os.makedirs(data_dir)
+    logger.info(f"Создана директория для базы данных: {data_dir}")
+
 # Загрузка конфигурации
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -48,7 +54,7 @@ if tr_cfg.tr_db_type == 'mysql':
     db = MySQLCommon(tr_cfg.tr_db)
 elif tr_cfg.tr_db_type == 'sqlite':
     default_cfg = {
-        'db_file_path': '/dev/shm/tr.db.sqlite',
+        'db_file_path': os.path.join(data_dir, 'tracker.sqlite'),
         'table_name': 'tracker',
         'table_schema': '''CREATE TABLE IF NOT EXISTS tracker (
             info_hash CHAR(20),
@@ -62,6 +68,7 @@ elif tr_cfg.tr_db_type == 'sqlite':
         'log_name': 'SQLite'
     }
     db = SQLiteCommon({**default_cfg, **tr_cfg.tr_db})
+    logger.info(f"База данных SQLite инициализирована: {default_cfg['db_file_path']}")
 else:
     raise ValueError('Unsupported DB type')
 
