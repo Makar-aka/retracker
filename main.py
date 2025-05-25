@@ -1,14 +1,25 @@
 from flask import Flask, request, Response
 from tracker import *
-from db_handlers import SQLiteCommon, MySQLCommon  # Добавьте эту строку
+from db_handlers import SQLiteCommon, MySQLCommon
 import configparser
 import os
+import logging
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
 # Загрузка конфигурации
 config = configparser.ConfigParser()
 config.read('config.ini')
+
+logger.info("Загрузка конфигурации...")
 
 tr_cfg = Config(
     tr_cache_type=config['CACHE']['type'],
@@ -25,12 +36,14 @@ tr_cfg = Config(
 )
 
 # Инициализация кэша
+logger.info(f"Инициализация кэша типа: {tr_cfg.tr_cache_type}")
 if tr_cfg.tr_cache_type == 'sqlite':
     tr_cache = CacheSQLite(tr_cfg.tr_cache)
 else:
     tr_cache = CacheCommon()
 
 # Инициализация БД
+logger.info(f"Инициализация БД типа: {tr_cfg.tr_db_type}")
 if tr_cfg.tr_db_type == 'mysql':
     db = MySQLCommon(tr_cfg.tr_db)
 elif tr_cfg.tr_db_type == 'sqlite':
@@ -56,6 +69,7 @@ else:
 def announce():
     # Garbage collector
     if tr_cfg.run_gc_key in request.args:
+        logger.info("Запущена сборка мусора")
         announce_interval = max(int(tr_cfg.announce_interval), 60)
         expire_factor = max(float(tr_cfg.peer_expire_factor), 2)
         peer_expire_time = TIMENOW - int(announce_interval * expire_factor)
@@ -70,6 +84,7 @@ def announce():
     # Получение и проверка параметров
     info_hash = request.args.get('info_hash')
     if not info_hash or len(info_hash) != 20:
+        logger.warning(f"Получен некорректный info_hash от {request.remote_addr}")
         return Response(bencode({'failure reason': 'Invalid info_hash'}), mimetype='text/plain')
 
     try:
@@ -78,14 +93,19 @@ def announce():
         port = 0
     
     if not 0 <= port <= 0xFFFF:
+        logger.warning(f"Получен некорректный порт от {request.remote_addr}: {port}")
         return Response(bencode({'failure reason': 'Invalid port'}), mimetype='text/plain')
 
     # Обработка IP
     ip = request.remote_addr
+    logger.debug(f"Запрос announce от {ip}:{port}")
     
     # ... остальная логика обработки запроса ...
 
     return Response(bencode(output), mimetype='text/plain')
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    host = config['TRACKER'].get('host', '0.0.0.0')
+    port = config['TRACKER'].getint('port', 8080)
+    logger.info(f"Запуск сервера на {host}:{port}")
+    app.run(host=host, port=port)
