@@ -330,7 +330,7 @@ def stats():
         # Получаем статистику по самым активным торрентам
         top_torrents = db.query("""
             SELECT 
-                info_hash,
+                hex(info_hash) as info_hash,
                 COUNT(*) as peer_count,
                 SUM(CASE WHEN left = 0 THEN 1 ELSE 0 END) as seed_count
             FROM tracker 
@@ -345,7 +345,7 @@ def stats():
             'uptime': int(time.time() - app.start_time),
             'announce_interval': tr_cfg.announce_interval,
             'stats': total_stats[0] if total_stats else {},
-            'top_torrents': top_torrents if top_torrents else []
+            'top_torrents': [dict(t) for t in (top_torrents if top_torrents else [])]
         }
 
         return Response(
