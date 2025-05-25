@@ -8,7 +8,7 @@ import urllib.parse
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Изменено на DEBUG для более детального логирования
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[logging.StreamHandler()]
 )
@@ -61,6 +61,7 @@ elif tr_cfg.tr_db_type == 'sqlite':
             info_hash CHAR(20),
             ip CHAR(8),
             port INTEGER,
+            left INTEGER DEFAULT 0,
             update_time INTEGER,
             PRIMARY KEY (info_hash, ip, port)
         )''',
@@ -73,6 +74,17 @@ elif tr_cfg.tr_db_type == 'sqlite':
 else:
     raise ValueError('Unsupported DB type')
 
+@app.route('/status')
+def status():
+    """Эндпоинт для проверки статуса трекера"""
+    try:
+        # Проверяем подключение к БД
+        db.query("SELECT 1")
+        return Response("OK", mimetype='text/plain')
+    except Exception as e:
+        logger.error(f"Ошибка проверки статуса: {e}")
+        return Response("ERROR", mimetype='text/plain'), 500
+
 @app.route('/announce')
 def announce():
     try:
@@ -83,7 +95,8 @@ def announce():
             expire_factor = max(float(tr_cfg.peer_expire_factor), 2)
             peer_expire_time = TIMENOW - int(announce_interval * expire_factor)
 
-            db.query(f"DELETE FROM tracker WHERE update_time < {peer_expire_time}")
+            result = db.query("DELETE FROM tracker WHERE update_time < ?", (peer_expire_time,))
+            logger.info(f"Удалено устаревших записей: {len(result) if result else 0}")
             
             if hasattr(tr_cache, 'gc'):
                 tr_cache.gc()
@@ -133,120 +146,96 @@ def announce():
         no_peer_id = int(request.args.get('no_peer_id', 0))
         numwant = min(int(request.args.get('numwant', tr_cfg.numwant)), 200)
 
-        # Кэширование списка пиров
-        cache_key = f"{PEERS_LIST_PREFIX}{info_hash.hex()}"
-        peers_list = tr_cache.get(cache_key) if tr_cache.used else False
+        # Обновляем информацию о пире в БД
+        db.query(
+            "REPLACE INTO tracker (info_hash, ip, port, left, update_time) VALUES (?, ?, ?, ?, ?)",
+            (info_hash, encode_ip(ip), port, left, TIMENOW)
+        )
 
-        if not peers_list:
-            # Обновляем информацию о пире в БД
-            db.query(
-                f"REPLACE INTO tracker (info_hash, ip, port, update_time) VALUES (?, ?, ?, ?)",
-                (info_hash, encode_ip(ip), port, TIMENOW)
-            )
+        # Получаем список активных пиров
+        peers_query = db.query(
+            "SELECT ip, port, left FROM tracker WHERE info_hash = ? AND update_time > ? ORDER BY RANDOM() LIMIT ?",
+            (info_hash, TIMENOW - tr_cfg.announce_interval, numwant)
+        )
 
-            # Получаем список активных пиров
-            peers_query = db.fetch_rowset(
-                f"SELECT ip, port FROM tracker WHERE info_hash = ? AND update_time > ? ORDER BY {db.random_fn} LIMIT ?",
-                (info_hash, TIMENOW - tr_cfg.announce_interval, numwant)
-            )
+        # Формируем список пиров и считаем статистику
+        peers = []
+        complete = 0
+        incomplete = 0
 
-            peers_list = []
-            complete = incomplete = 0
+        for peer in peers_query:
+            if peer['left'] == 0:
+                complete += 1
+            else:
+                incomplete += 1
 
-            for peer in peers_query:
-                if peer.get('left', 0) == 0:
-                    complete += 1
-                else:
-                    incomplete += 1
-                
-                peer_data = {
-                    'ip': decode_ip(peer['ip']),
-                    'port': peer['port']
-                }
-                if not no_peer_id and 'peer_id' in peer:
-                    peer_data['peer_id'] = peer['peer_id']
-                peers_list.append(peer_data)
-
-            # Кэшируем результат
-            if tr_cache.used:
-                tr_cache.set(cache_key, {
-                    'peers': peers_list,
-                    'complete': complete,
-                    'incomplete': incomplete
-                }, PEERS_LIST_EXPIRE)
+            peers.append({
+                'ip': decode_ip(peer['ip']),
+                'port': peer['port']
+            })
 
         # Формируем ответ
         output = {
             'interval': tr_cfg.announce_interval,
-            'min interval': tr_cfg.announce_interval,
-            'complete': peers_list.get('complete', 0) if isinstance(peers_list, dict) else 0,
-            'incomplete': peers_list.get('incomplete', 0) if isinstance(peers_list, dict) else 0,
-            'peers': peers_list.get('peers', []) if isinstance(peers_list, dict) else peers_list
+            'min interval': tr_cfg.announce_interval // 2,
+            'complete': complete,
+            'incomplete': incomplete,
+            'peers': peers
         }
 
-        logger.info(f"Обработан announce запрос от {ip}:{port} для {info_hash.hex()}")
+        logger.debug(f"Отправлен ответ для {ip}:{port}, peers: {len(peers)}, complete: {complete}, incomplete: {incomplete}")
         return Response(bencode(output), mimetype='text/plain')
 
     except Exception as e:
         logger.error(f"Ошибка обработки announce запроса: {e}")
         return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
 
-@app.route('/announce')
-def announce():
+@app.route('/scrape')
+def scrape():
     try:
-        # Garbage collector
-        if tr_cfg.run_gc_key in request.args:
-            logger.info("Запущена сборка мусора")
-            announce_interval = max(int(tr_cfg.announce_interval), 60)
-            expire_factor = max(float(tr_cfg.peer_expire_factor), 2)
-            peer_expire_time = TIMENOW - int(announce_interval * expire_factor)
+        info_hashes = request.args.getlist('info_hash')
+        if not info_hashes:
+            return Response(bencode({'failure reason': 'No info_hash provided'}), mimetype='text/plain')
 
-            db.query(f"DELETE FROM tracker WHERE update_time < {peer_expire_time}")
-            
-            if hasattr(tr_cache, 'gc'):
-                tr_cache.gc()
-            
-            return Response("OK", mimetype='text/plain')
+        files = {}
+        for info_hash in info_hashes:
+            try:
+                info_hash = urllib.parse.unquote_to_bytes(info_hash)
+                if len(info_hash) != 20:
+                    continue
 
-        # ... (остальной код без изменений до обновления БД) ...
+                # Получаем статистику
+                stats = db.query(
+                    "SELECT COUNT(*) as total, SUM(CASE WHEN left = 0 THEN 1 ELSE 0 END) as complete FROM tracker WHERE info_hash = ?",
+                    (info_hash,)
+                )
 
-        # Обновляем информацию о пире в БД и получаем список пиров
-        try:
-            # Обновляем информацию о пире
-            db.query(
-                "REPLACE INTO tracker (info_hash, ip, port, update_time) VALUES (?, ?, ?, ?)",
-                (info_hash, encode_ip(ip), port, TIMENOW)
-            )
+                if stats:
+                    complete = stats[0].get('complete', 0) or 0
+                    total = stats[0].get('total', 0) or 0
+                    files[info_hash] = {
+                        'complete': complete,
+                        'downloaded': complete,  # Примерная оценка
+                        'incomplete': total - complete
+                    }
 
-            # Получаем список активных пиров
-            peers_query = db.query(
-                "SELECT ip, port FROM tracker WHERE info_hash = ? AND update_time > ? ORDER BY RANDOM() LIMIT ?",
-                (info_hash, TIMENOW - tr_cfg.announce_interval, numwant)
-            )
+            except Exception as e:
+                logger.error(f"Ошибка обработки info_hash в scrape: {e}")
+                continue
 
-            peers_list = []
-            complete = incomplete = 0
+        return Response(bencode({'files': files}), mimetype='text/plain')
 
-            for peer in peers_query:
-                if peer.get('left', 0) == 0:
-                    complete += 1
-                else:
-                    incomplete += 1
-                
-                peer_data = {
-                    'ip': decode_ip(peer['ip']),
-                    'port': peer['port']
-                }
-                if not no_peer_id and 'peer_id' in peer:
-                    peer_data['peer_id'] = peer['peer_id']
-                peers_list.append(peer_data)
-
-        except Exception as e:
-            logger.error(f"Ошибка работы с БД: {e}")
-            return Response(bencode({'failure reason': 'Database error'}), mimetype='text/plain')
+    except Exception as e:
+        logger.error(f"Ошибка обработки scrape запроса: {e}")
+        return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
 
 if __name__ == '__main__':
     host = config['TRACKER'].get('host', '0.0.0.0')
     port = config['TRACKER'].getint('port', 8080)
     logger.info(f"Запуск сервера на {host}:{port}")
-    app.run(host=host, port=port)
+    app.run(
+        host=host,
+        port=port,
+        debug=True,  # Включаем режим отладки
+        use_reloader=True  # Автоматическая перезагрузка при изменении кода
+    )
