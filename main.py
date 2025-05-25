@@ -7,9 +7,12 @@ import logging
 import os
 import urllib.parse
 import socket
+import time
+import json
 
 # Создаем приложение Flask
 app = Flask(__name__)
+app.start_time = time.time()
 
 # Загрузка конфигурации
 config = configparser.ConfigParser()
@@ -304,6 +307,58 @@ def scrape():
     except Exception as e:
         logger.error(f"Ошибка обработки scrape запроса: {e}")
         return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
+@app.route('/stat')
+def stats():
+    """Эндпоинт для отображения общей статистики сервера"""
+    # Проверка пароля
+    auth_password = request.args.get('password')
+    if not auth_password or auth_password != config['STATS'].get('access_password'):
+        return Response('Unauthorized', mimetype='text/plain'), 401
+
+    try:
+        # Получаем общую статистику
+        total_stats = db.query("""
+            SELECT 
+                COUNT(DISTINCT info_hash) as total_torrents,
+                COUNT(*) as total_peers,
+                SUM(CASE WHEN left = 0 THEN 1 ELSE 0 END) as total_seeds,
+                COUNT(DISTINCT ip) as unique_peers
+            FROM tracker 
+            WHERE update_time > ?
+        """, (TIMENOW - tr_cfg.announce_interval,))
+
+        # Получаем статистику по самым активным торрентам
+        top_torrents = db.query("""
+            SELECT 
+                info_hash,
+                COUNT(*) as peer_count,
+                SUM(CASE WHEN left = 0 THEN 1 ELSE 0 END) as seed_count
+            FROM tracker 
+            WHERE update_time > ?
+            GROUP BY info_hash
+            ORDER BY peer_count DESC
+            LIMIT 10
+        """, (TIMENOW - tr_cfg.announce_interval,))
+
+        stats_data = {
+            'server_time': TIMENOW,
+            'uptime': int(time.time() - app.start_time),
+            'announce_interval': tr_cfg.announce_interval,
+            'stats': total_stats[0] if total_stats else {},
+            'top_torrents': top_torrents if top_torrents else []
+        }
+
+        return Response(
+            json.dumps(stats_data, indent=2), 
+            mimetype='application/json'
+        )
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении статистики: {e}")
+        return Response(
+            json.dumps({'error': str(e)}), 
+            mimetype='application/json'
+        ), 500
 
 if __name__ == '__main__':
     # Проверка корректности хоста
