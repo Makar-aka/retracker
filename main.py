@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Настройка доверенных прокси
-TRUSTED_PROXIES = os.getenv('TRUSTED_PROXIES', '').split(',')
-if not TRUSTED_PROXIES:
-    logger.warning("TRUSTED_PROXIES не настроены. Будут приниматься все заголовки X-Real-IP и X-Forwarded-For")
+# Настройка доверенных прокси (добавляем IP Nginx Proxy Manager по умолчанию)
+TRUSTED_PROXIES = os.getenv('TRUSTED_PROXIES', 
+    config['TRACKER'].get('trusted_proxies', '127.0.0.1')).split(',')
+logger.info(f"Доверенные прокси: {TRUSTED_PROXIES}")
 
 def get_real_ip():
     """Получает реальный IP адрес клиента из заголовков"""
@@ -29,17 +29,18 @@ def get_real_ip():
     logger.debug("X-Real-IP: %s", request.headers.get('X-Real-IP'))
     logger.debug("X-Forwarded-For: %s", request.headers.get('X-Forwarded-For'))
 
-    # Получаем IP из заголовков
-    if TRUSTED_PROXIES and request.remote_addr not in TRUSTED_PROXIES:
-        logger.warning(f"Запрос с недоверенного прокси: {request.remote_addr}")
-        return request.remote_addr
-
-    real_ip = request.headers.get('X-Real-IP') or \
-              request.headers.get('X-Forwarded-For', '').split(',')[0].strip() or \
-              request.remote_addr
-              
-    logger.info(f"Определен IP адрес: {real_ip} (remote_addr: {request.remote_addr})")
-    return real_ip
+    # Если запрос пришел от доверенного прокси
+    if request.remote_addr in TRUSTED_PROXIES:
+        # Используем X-Real-IP или первый IP из X-Forwarded-For
+        real_ip = request.headers.get('X-Real-IP') or \
+                  request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+        if real_ip and verify_ip(real_ip):
+            logger.info(f"Использован IP из заголовков прокси: {real_ip}")
+            return real_ip
+    
+    # Если не получили IP из заголовков или прокси не доверенный
+    logger.warning(f"Используется IP источника запроса: {request.remote_addr}")
+    return request.remote_addr
 
 # Создание директории для базы данных
 data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
