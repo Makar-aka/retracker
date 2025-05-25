@@ -11,7 +11,6 @@ import time
 import json
 import datetime
 
-# --- Универсальные пути ---
 def get_path(docker_path, local_path):
     return docker_path if os.path.exists(docker_path) else local_path
 
@@ -19,27 +18,22 @@ CONFIG_PATH = get_path('/config/config.ini', os.path.join('config', 'config.ini'
 DATA_DIR = get_path('/data', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data'))
 TEMPLATES_DIR = get_path('/templates', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
 
-# Загрузка конфигурации
 config = configparser.ConfigParser()
 config.read(CONFIG_PATH)
 SECRET_KEY = config.get('FLASK', 'secret_key', fallback='your-very-secret-key')
 
-# Создаем приложение Flask с универсальным путём к шаблонам
 app = Flask(__name__, template_folder=TEMPLATES_DIR)
 app.secret_key = SECRET_KEY
 app.start_time = time.time()
 
-# Создание директории для данных
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
-# Настройка логирования
 log_file = config['LOGGING'].get('log_file', os.path.join(DATA_DIR, 'tracker.log'))
 log_dir = os.path.dirname(log_file)
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-# Очистка старых логов если включено
 if config['LOGGING'].getboolean('clear_on_start', False) and os.path.exists(log_file):
     try:
         os.remove(log_file)
@@ -50,9 +44,7 @@ if config['LOGGING'].getboolean('clear_on_start', False) and os.path.exists(log_
     except Exception as e:
         print(f"Ошибка при очистке старых логов: {e}")
 
-# Настройка обработчиков логов
 handlers = []
-
 file_handler = RotatingFileHandler(
     filename=log_file,
     maxBytes=int(config['LOGGING'].get('max_bytes', 5242880)),
@@ -64,7 +56,7 @@ handlers.append(file_handler)
 
 if config['LOGGING'].getboolean('console_output', True):
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter(config['LOGGING'].get('format', '%(asctime)s [%(levelname)s] %(message)s')))
+    console_handler.setFormatter(logging.Formatter(config['LOGGING'].get('format', '%(asctime)s] [%(levelname)s] %(message)s')))
     handlers.append(console_handler)
 
 logging.basicConfig(
@@ -75,38 +67,31 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.info("Логирование инициализировано")
 
-# Настройка доверенных прокси и режима работы
 mode = config['TRACKER'].get('mode', 'direct')
 TRUSTED_PROXIES = config['TRACKER'].get('trusted_proxies', '127.0.0.1').split(',')
 logger.info(f"Режим работы: {mode}")
 logger.info(f"Доверенные прокси: {TRUSTED_PROXIES}")
 
 def get_real_ip():
-    """Получает реальный IP адрес клиента с учетом режима работы"""
     if mode == 'proxy':
         logger.debug("Headers: %s", dict(request.headers))
         logger.debug("Remote addr: %s", request.remote_addr)
-
         if request.remote_addr in TRUSTED_PROXIES:
             if config['TRACKER'].getboolean('use_x_real_ip', True):
                 real_ip = request.headers.get('X-Real-IP')
                 if real_ip and verify_ip(real_ip):
                     logger.debug(f"Использован X-Real-IP: {real_ip}")
                     return real_ip
-
             if config['TRACKER'].getboolean('use_x_forwarded_for', True):
                 forwarded_for = request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
                 if forwarded_for and verify_ip(forwarded_for):
                     logger.debug(f"Использован X-Forwarded-For: {forwarded_for}")
                     return forwarded_for
-
             logger.warning(f"Не удалось получить IP из заголовков прокси")
     else:
         logger.debug(f"Прямое подключение от {request.remote_addr}")
-
     return request.remote_addr
 
-# Инициализация конфигурации трекера
 tr_cfg = Config(
     tr_cache_type=config['CACHE']['type'],
     tr_db_type=config['DB']['type'],
@@ -121,14 +106,12 @@ tr_cfg = Config(
     run_gc_key=config['TRACKER']['run_gc_key']
 )
 
-# Инициализация кэша
 logger.info(f"Инициализация кэша типа: {tr_cfg.tr_cache_type}")
 if tr_cfg.tr_cache_type == 'sqlite':
     tr_cache = CacheSQLite(tr_cfg.tr_cache)
 else:
     tr_cache = CacheCommon()
 
-# Инициализация БД
 logger.info(f"Инициализация БД типа: {tr_cfg.tr_db_type}")
 if tr_cfg.tr_db_type != 'sqlite':
     raise ValueError('Only SQLite database is supported')
@@ -150,11 +133,8 @@ logger.info(f"База данных SQLite инициализирована: {de
 
 @app.route('/status')
 def status():
-    """Эндпоинт для проверки статуса трекера"""
     try:
-        # Проверяем подключение к БД
         db.query("SELECT 1")
-        # Показываем информацию о клиенте
         client_info = {
             'remote_addr': request.remote_addr,
             'x_real_ip': request.headers.get('X-Real-IP'),
@@ -169,22 +149,17 @@ def status():
 @app.route('/announce')
 def announce():
     try:
-        # Garbage collector
         if tr_cfg.run_gc_key in request.args:
             logger.info("Запущена сборка мусора")
             announce_interval = max(int(tr_cfg.announce_interval), 60)
             expire_factor = max(float(tr_cfg.peer_expire_factor), 2)
             peer_expire_time = TIMENOW - int(announce_interval * expire_factor)
-
             result = db.query("DELETE FROM tracker WHERE update_time < ?", (peer_expire_time,))
             logger.info(f"Удалено устаревших записей: {len(result) if result else 0}")
-            
             if hasattr(tr_cache, 'gc'):
                 tr_cache.gc()
-            
             return Response("OK", mimetype='text/plain')
 
-        # Получение и проверка параметров
         info_hash = request.args.get('info_hash', '')
         if info_hash:
             try:
@@ -206,20 +181,17 @@ def announce():
             logger.warning(f"Получен некорректный порт от {request.remote_addr}: {port}")
             return Response(bencode({'failure reason': 'Invalid port'}), mimetype='text/plain')
 
-        # Получение реального IP адреса
         ip = get_real_ip()
         if not verify_ip(ip):
             logger.warning(f"Некорректный IP адрес: {ip}")
             return Response(bencode({'failure reason': 'Invalid IP'}), mimetype='text/plain')
 
-        # Проверка reported_ip если разрешено
         if not tr_cfg.ignore_reported_ip and 'ip' in request.args:
             reported_ip = request.args.get('ip')
             if tr_cfg.verify_reported_ip and verify_ip(reported_ip):
                 ip = reported_ip
                 logger.debug(f"Использован reported_ip: {ip}")
 
-        # Дополнительные параметры
         event = request.args.get('event', '')
         uploaded = int(request.args.get('uploaded', 0))
         downloaded = int(request.args.get('downloaded', 0))
@@ -228,7 +200,6 @@ def announce():
         no_peer_id = int(request.args.get('no_peer_id', 0))
         numwant = min(int(request.args.get('numwant', tr_cfg.numwant)), 200)
 
-        # Обновляем информацию о пире в БД
         encoded_ip = encode_ip(ip)
         db.query(
             "REPLACE INTO tracker (info_hash, ip, port, left, update_time) VALUES (?, ?, ?, ?, ?)",
@@ -236,13 +207,11 @@ def announce():
         )
         logger.debug(f"Сохранен пир: {ip}({encoded_ip}):{port}")
 
-        # Получаем список активных пиров
         peers_query = db.query(
             "SELECT ip, port, left FROM tracker WHERE info_hash = ? AND update_time > ? ORDER BY RANDOM() LIMIT ?",
             (info_hash, TIMENOW - tr_cfg.announce_interval, numwant)
         )
 
-        # Формируем список пиров и считаем статистику
         peers = []
         complete = 0
         incomplete = 0
@@ -252,13 +221,11 @@ def announce():
                 complete += 1
             else:
                 incomplete += 1
-
             peers.append({
                 'ip': decode_ip(peer['ip']),
                 'port': peer['port']
             })
 
-        # Формируем ответ
         output = {
             'interval': tr_cfg.announce_interval,
             'min interval': tr_cfg.announce_interval // 2,
@@ -287,22 +254,18 @@ def scrape():
                 info_hash = urllib.parse.unquote_to_bytes(info_hash)
                 if len(info_hash) != 20:
                     continue
-
-                # Получаем статистику
                 stats = db.query(
                     "SELECT COUNT(*) as total, SUM(CASE WHEN left = 0 THEN 1 ELSE 0 END) as complete FROM tracker WHERE info_hash = ?",
                     (info_hash,)
                 )
-
                 if stats:
                     complete = stats[0].get('complete', 0) or 0
                     total = stats[0].get('total', 0) or 0
                     files[info_hash] = {
                         'complete': complete,
-                        'downloaded': complete,  # Примерная оценка
+                        'downloaded': complete,
                         'incomplete': total - complete
                     }
-
             except Exception as e:
                 logger.error(f"Ошибка обработки info_hash в scrape: {e}")
                 continue
@@ -346,9 +309,7 @@ def login_required(f):
 @app.route('/stat')
 @login_required
 def stats():
-    """Эндпоинт для отображения общей статистики сервера (Flask-сессии)"""
     try:
-        # Получаем общую статистику
         total_stats = db.query("""
             SELECT 
                 COUNT(DISTINCT info_hash) as total_torrents,
@@ -359,7 +320,6 @@ def stats():
             WHERE update_time > ?
         """, (TIMENOW - tr_cfg.announce_interval,))
 
-        # Получаем статистику по самым активным торрентам
         top_torrents = db.query("""
             SELECT 
                 hex(info_hash) as info_hash,

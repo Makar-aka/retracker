@@ -3,12 +3,12 @@ import sqlite3
 import json
 import socket
 import re
-from typing import Union, Dict, Any, Optional
+from typing import Union, Dict, Any
 from dataclasses import dataclass
 
 TIMENOW = int(time.time())
 PEERS_LIST_PREFIX = "peers_"
-PEERS_LIST_EXPIRE = 300  # 5 minutes
+PEERS_LIST_EXPIRE = 300
 
 @dataclass
 class Config:
@@ -27,13 +27,10 @@ class Config:
 class CacheCommon:
     def __init__(self):
         self.used = False
-    
     def get(self, name: str) -> Any:
         return False
-    
     def set(self, name: str, value: Any, ttl: int = 0) -> bool:
         return False
-    
     def rm(self, name: str) -> bool:
         return False
 
@@ -58,7 +55,6 @@ class CacheSQLite(CacheCommon):
         self.db = sqlite3.connect(self.cfg['db_file_path'])
         self.db.execute(self.cfg['table_schema'])
         self.db.commit()
-
     def get(self, name: str) -> Any:
         cursor = self.db.execute(
             f"SELECT cache_value FROM {self.cfg['table_name']} "
@@ -67,7 +63,6 @@ class CacheSQLite(CacheCommon):
         )
         row = cursor.fetchone()
         return json.loads(row[0]) if row else False
-
     def set(self, name: str, value: Any, ttl: int = 86400) -> bool:
         expire = TIMENOW + ttl
         try:
@@ -80,7 +75,6 @@ class CacheSQLite(CacheCommon):
             return True
         except Exception:
             return False
-
     def gc(self, expire_time: int = None) -> int:
         if expire_time is None:
             expire_time = TIMENOW
