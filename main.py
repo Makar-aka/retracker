@@ -306,10 +306,13 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+import os
+
 @app.route('/stat')
 @login_required
 def stats():
     try:
+        
         total_stats = db.query("""
             SELECT 
                 COUNT(DISTINCT info_hash) as total_torrents,
@@ -332,12 +335,20 @@ def stats():
             LIMIT 10
         """, (TIMENOW - tr_cfg.announce_interval,))
 
+        db_file_path = db.cfg['db_file_path']
+        db_size = os.path.getsize(db_file_path) if os.path.exists(db_file_path) else 0
+
+        total_records = db.query("SELECT COUNT(*) as cnt FROM tracker")
+        record_count = total_records[0]['cnt'] if total_records else 0
+
         stats_data = {
             'server_time': datetime.datetime.fromtimestamp(TIMENOW).strftime('%Y-%m-%d %H:%M:%S'),
             'uptime': str(datetime.timedelta(seconds=int(time.time() - app.start_time))),
             'announce_interval': f"{tr_cfg.announce_interval} сек.",
             'stats': total_stats[0] if total_stats else {},
             'top_torrents': [dict(t) for t in (top_torrents if top_torrents else [])],
+            'db_size': db_size,
+            'record_count': record_count,
             'current_year': datetime.datetime.now().year
         }
 

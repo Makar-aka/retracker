@@ -127,6 +127,15 @@
                     <td>Уникальных пиров</td>
                     <td>{{ stats.unique_peers }}</td>
                 </tr>
+                <tr>
+                    <td>Размер базы данных</td>
+                    <td>{{ (db_size // 1024) }} КБ</td>
+                </tr>
+                <tr>
+                    <td>Количество записей в базе</td>
+                    <td>{{ record_count }}</td>
+                </tr>
+
             </table>
         </div>
 
