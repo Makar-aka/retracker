@@ -16,7 +16,13 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Настройка доверенных прокси (добавляем IP Nginx Proxy Manager по умолчанию)
+# Загрузка конфигурации
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+logger.info("Загрузка конфигурации...")
+
+# Настройка доверенных прокси
 TRUSTED_PROXIES = os.getenv('TRUSTED_PROXIES', 
     config['TRACKER'].get('trusted_proxies', '127.0.0.1')).split(',')
 logger.info(f"Доверенные прокси: {TRUSTED_PROXIES}")
