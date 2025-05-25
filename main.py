@@ -2,9 +2,55 @@ from flask import Flask, request, Response
 from tracker import *
 from db_handlers import SQLiteCommon, MySQLCommon
 import configparser
-import os
+from logging.handlers import RotatingFileHandler
 import logging
+import os
 import urllib.parse
+
+# Создаем директорию для логов если нужно
+log_file = config['LOGGING'].get('log_file', 'data/tracker.log')
+log_dir = os.path.dirname(log_file)
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+# Очистка старых логов если включено
+if config['LOGGING'].getboolean('clear_on_start', False) and os.path.exists(log_file):
+    try:
+        os.remove(log_file)
+        for i in range(int(config['LOGGING'].get('backup_count', 5))):
+            backup = f"{log_file}.{i+1}"
+            if os.path.exists(backup):
+                os.remove(backup)
+    except Exception as e:
+        print(f"Ошибка при очистке старых логов: {e}")
+
+# Настройка логирования
+handlers = []
+
+# Файловый обработчик с ротацией
+file_handler = RotatingFileHandler(
+    filename=log_file,
+    maxBytes=int(config['LOGGING'].get('max_bytes', 5242880)),
+    backupCount=int(config['LOGGING'].get('backup_count', 5)),
+    encoding='utf-8'
+)
+file_handler.setFormatter(logging.Formatter(config['LOGGING'].get('format', '%(asctime)s [%(levelname)s] %(message)s')))
+handlers.append(file_handler)
+
+# Консольный обработчик если включен
+if config['LOGGING'].getboolean('console_output', True):
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(config['LOGGING'].get('format', '%(asctime)s [%(levelname)s] %(message)s')))
+    handlers.append(console_handler)
+
+# Применяем настройки
+logging.basicConfig(
+    level=getattr(logging, config['LOGGING'].get('level', 'INFO').upper()),
+    handlers=handlers
+)
+
+logger = logging.getLogger(__name__)
+logger.info("Логирование инициализировано")
 
 # Настройка логирования
 logging.basicConfig(
