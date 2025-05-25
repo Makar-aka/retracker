@@ -440,83 +440,7 @@ def stats():
     # Проверка пароля
     auth_password = request.args.get('password')
     if not auth_password:
-        # HTML шаблон для формы входа
-        login_template = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Вход в статистику трекера</title>
-            <meta charset="utf-8">
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    margin: 0;
-                    padding: 0;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    min-height: 100vh;
-                    background-color: #f5f5f5;
-                }
-                .login-container {
-                    background-color: white;
-                    padding: 40px;
-                    border-radius: 8px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    width: 100%;
-                    max-width: 400px;
-                }
-                .login-title {
-                    margin: 0 0 20px 0;
-                    text-align: center;
-                    color: #333;
-                }
-                .login-form {
-                    display: flex;
-                    flex-direction: column;
-                }
-                .password-input {
-                    padding: 12px;
-                    margin: 10px 0;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
-                    font-size: 16px;
-                }
-                .submit-button {
-                    padding: 12px;
-                    background-color: #4CAF50;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    cursor: pointer;
-                    font-size: 16px;
-                    margin-top: 10px;
-                }
-                .submit-button:hover {
-                    background-color: #45a049;
-                }
-                .error-message {
-                    color: #f44336;
-                    text-align: center;
-                    margin-top: 10px;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="login-container">
-                <h2 class="login-title">Вход в статистику трекера</h2>
-                <form class="login-form" method="get" action="/stat">
-                    <input type="password" name="password" placeholder="Введите пароль" class="password-input" required autofocus>
-                    <button type="submit" class="submit-button">Войти</button>
-                </form>
-                {% if error %}
-                <p class="error-message">{{ error }}</p>
-                {% endif %}
-            </div>
-        </body>
-        </html>
-        """
-        return render_template_string(login_template, error=request.args.get('error'))
+        return render_template('login.html', error=request.args.get('error'))
     
     if auth_password != config['STATS'].get('access_password'):
         return redirect(url_for('stats', error='Неверный пароль'))
@@ -555,10 +479,7 @@ def stats():
             'top_torrents': [dict(t) for t in (top_torrents if top_torrents else [])]
         }
 
-        return render_template_string(
-            STATS_TEMPLATE,  # Используем существующий шаблон статистики
-            **stats_data
-        )
+        return render_template('stats.html', **stats_data)
 
     except Exception as e:
         logger.error(f"Ошибка при получении статистики: {e}")
@@ -566,6 +487,7 @@ def stats():
             json.dumps({'error': str(e)}), 
             mimetype='application/json'
         ), 500
+
 if __name__ == '__main__':
     # Проверка корректности хоста
     host = config['TRACKER'].get('host', '127.0.0.1')
