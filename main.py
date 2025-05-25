@@ -10,7 +10,7 @@ import socket
 import time
 import json
 import datetime
-
+import base64
 
 # Создаем приложение Flask
 app = Flask(__name__)
@@ -310,16 +310,31 @@ def scrape():
         logger.error(f"Ошибка обработки scrape запроса: {e}")
         return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
 
+def check_basic_auth(auth_header):
+    """Проверка HTTP Basic Auth"""
+    if not auth_header or not auth_header.startswith('Basic '):
+        return False
+    try:
+        auth_decoded = base64.b64decode(auth_header.split(' ', 1)[1]).decode('utf-8')
+        # Формат: username:password
+        username, password = auth_decoded.split(':', 1)
+        # Можно задать username в config.ini, но обычно достаточно только пароля
+        expected_password = config['STATS'].get('access_password')
+        # username можно не проверять или задать, например, 'admin'
+        return password == expected_password
+    except Exception:
+        return False
+
 @app.route('/stat')
 def stats():
-    """Эндпоинт для отображения общей статистики сервера"""
-    # Проверка пароля
-    auth_password = request.args.get('password')
-    if not auth_password:
-        return render_template('login.html', error=request.args.get('error'), current_year=datetime.datetime.now().year)
-    
-    if auth_password != config['STATS'].get('access_password'):
-        return redirect(url_for('stats', error='Неверный пароль'))
+    """Эндпоинт для отображения общей статистики сервера с HTTP Basic Auth"""
+    auth_header = request.headers.get('Authorization')
+    if not check_basic_auth(auth_header):
+        return Response(
+            'Требуется авторизация',
+            401,
+            {'WWW-Authenticate': 'Basic realm="Statistics"'}
+        )
 
     try:
         # Получаем общую статистику
@@ -346,7 +361,6 @@ def stats():
             LIMIT 10
         """, (TIMENOW - tr_cfg.announce_interval,))
 
-        # Подготавливаем данные
         stats_data = {
             'server_time': datetime.datetime.fromtimestamp(TIMENOW).strftime('%Y-%m-%d %H:%M:%S'),
             'uptime': str(datetime.timedelta(seconds=int(time.time() - app.start_time))),
@@ -361,7 +375,7 @@ def stats():
     except Exception as e:
         logger.error(f"Ошибка при получении статистики: {e}")
         return Response(
-            json.dumps({'error': str(e)}), 
+            json.dumps({'error': str(e)}),
             mimetype='application/json'
         ), 500
 
