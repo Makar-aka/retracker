@@ -309,13 +309,14 @@ def scrape():
     except Exception as e:
         logger.error(f"Ошибка обработки scrape запроса: {e}")
         return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
+
 @app.route('/stat')
 def stats():
     """Эндпоинт для отображения общей статистики сервера"""
     # Проверка пароля
     auth_password = request.args.get('password')
     if not auth_password:
-        return render_template('login.html', error=request.args.get('error'))
+        return render_template('login.html', error=request.args.get('error'), current_year=datetime.datetime.now().year)
     
     if auth_password != config['STATS'].get('access_password'):
         return redirect(url_for('stats', error='Неверный пароль'))
@@ -351,7 +352,8 @@ def stats():
             'uptime': str(datetime.timedelta(seconds=int(time.time() - app.start_time))),
             'announce_interval': f"{tr_cfg.announce_interval} сек.",
             'stats': total_stats[0] if total_stats else {},
-            'top_torrents': [dict(t) for t in (top_torrents if top_torrents else [])]
+            'top_torrents': [dict(t) for t in (top_torrents if top_torrents else [])],
+            'current_year': datetime.datetime.now().year
         }
 
         return render_template('stats.html', **stats_data)
