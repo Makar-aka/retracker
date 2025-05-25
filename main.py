@@ -5,7 +5,7 @@ import os
 
 app = Flask(__name__)
 
-# Загрузка конфигурации
+# Р—Р°РіСЂСѓР·РєР° РєРѕРЅС„РёРіСѓСЂР°С†РёРё
 config = configparser.ConfigParser()
 config.read('config.ini')
 
@@ -23,13 +23,13 @@ tr_cfg = Config(
     run_gc_key=config['TRACKER']['run_gc_key']
 )
 
-# Инициализация кэша
+# РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РєСЌС€Р°
 if tr_cfg.tr_cache_type == 'sqlite':
     tr_cache = CacheSQLite(tr_cfg.tr_cache)
 else:
     tr_cache = CacheCommon()
 
-# Инициализация БД
+# РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ Р‘Р”
 if tr_cfg.tr_db_type == 'mysql':
     db = MySQLCommon(tr_cfg.tr_db)
 elif tr_cfg.tr_db_type == 'sqlite':
@@ -66,7 +66,7 @@ def announce():
         
         return Response("OK", mimetype='text/plain')
 
-    # Получение и проверка параметров
+    # РџРѕР»СѓС‡РµРЅРёРµ Рё РїСЂРѕРІРµСЂРєР° РїР°СЂР°РјРµС‚СЂРѕРІ
     info_hash = request.args.get('info_hash')
     if not info_hash or len(info_hash) != 20:
         return Response(bencode({'failure reason': 'Invalid info_hash'}), mimetype='text/plain')
@@ -79,10 +79,10 @@ def announce():
     if not 0 <= port <= 0xFFFF:
         return Response(bencode({'failure reason': 'Invalid port'}), mimetype='text/plain')
 
-    # Обработка IP
+    # РћР±СЂР°Р±РѕС‚РєР° IP
     ip = request.remote_addr
     
-    # ... остальная логика обработки запроса ...
+    # ... РѕСЃС‚Р°Р»СЊРЅР°СЏ Р»РѕРіРёРєР° РѕР±СЂР°Р±РѕС‚РєРё Р·Р°РїСЂРѕСЃР° ...
 
     return Response(bencode(output), mimetype='text/plain')
 
