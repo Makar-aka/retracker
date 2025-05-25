@@ -73,4 +73,20 @@ def view_db(db_path):
                 print("Left: N/A")
             print(f"Update Time: {datetime.fromtimestamp(row['update_time'])}")
             
-            # Дополнительно покажем все доступные колонки и их значения для 
+            # Дополнительно покажем все доступные колонки и их значения для отладки
+            print("\nВсе поля:")
+            for key in row.keys():
+                print(f"{key}: {row[key]}")
+            
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+if __name__ == '__main__':
+    import sys
+    db_path = sys.argv[1] if len(sys.argv) > 1 else 'data/tracker.sqlite'
+    view_db(db_path)
