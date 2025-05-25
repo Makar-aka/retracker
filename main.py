@@ -1,4 +1,4 @@
-from flask import Flask, request, Response, render_template_string
+from flask import Flask, request, Response, render_template_string, redirect, url_for
 from tracker import *
 from db_handlers import SQLiteCommon
 import configparser
@@ -313,8 +313,87 @@ def stats():
     """Эндпоинт для отображения общей статистики сервера"""
     # Проверка пароля
     auth_password = request.args.get('password')
-    if not auth_password or auth_password != config['STATS'].get('access_password'):
-        return Response('Unauthorized', mimetype='text/plain'), 401
+    if not auth_password:
+        # HTML шаблон для формы входа
+        login_template = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Вход в статистику трекера</title>
+            <meta charset="utf-8">
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 100vh;
+                    background-color: #f5f5f5;
+                }
+                .login-container {
+                    background-color: white;
+                    padding: 40px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    width: 100%;
+                    max-width: 400px;
+                }
+                .login-title {
+                    margin: 0 0 20px 0;
+                    text-align: center;
+                    color: #333;
+                }
+                .login-form {
+                    display: flex;
+                    flex-direction: column;
+                }
+                .password-input {
+                    padding: 12px;
+                    margin: 10px 0;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    font-size: 16px;
+                }
+                .submit-button {
+                    padding: 12px;
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    margin-top: 10px;
+                }
+                .submit-button:hover {
+                    background-color: #45a049;
+                }
+                .error-message {
+                    color: #f44336;
+                    text-align: center;
+                    margin-top: 10px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="login-container">
+                <h2 class="login-title">Вход в статистику трекера</h2>
+                <form class="login-form" method="get" action="/stat">
+                    <input type="password" name="password" placeholder="Введите пароль" class="password-input" required autofocus>
+                    <button type="submit" class="submit-button">Войти</button>
+                </form>
+                {% if error %}
+                <p class="error-message">{{ error }}</p>
+                {% endif %}
+            </div>
+        </body>
+        </html>
+        """
+        return render_template_string(login_template, error=request.args.get('error'))
+    
+    if auth_password != config['STATS'].get('access_password'):
+        return redirect(url_for('stats', error='Неверный пароль'))
 
     try:
         # Получаем общую статистику
@@ -350,125 +429,8 @@ def stats():
             'top_torrents': [dict(t) for t in (top_torrents if top_torrents else [])]
         }
 
-        # HTML шаблон
-        html_template = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Статистика трекера</title>
-            <meta charset="utf-8">
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    margin: 20px;
-                    background-color: #f5f5f5;
-                }
-                .container {
-                    max-width: 1200px;
-                    margin: 0 auto;
-                }
-                table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin: 20px 0;
-                    background-color: white;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-                }
-                th, td {
-                    padding: 12px;
-                    text-align: left;
-                    border-bottom: 1px solid #ddd;
-                }
-                th {
-                    background-color: #4CAF50;
-                    color: white;
-                }
-                tr:nth-child(even) {
-                    background-color: #f9f9f9;
-                }
-                tr:hover {
-                    background-color: #f5f5f5;
-                }
-                h1, h2 {
-                    color: #333;
-                }
-                .info-block {
-                    background-color: white;
-                    padding: 15px;
-                    margin-bottom: 20px;
-                    border-radius: 4px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>Статистика трекера</h1>
-                
-                <div class="info-block">
-                    <h2>Общая информация</h2>
-                    <table>
-                        <tr>
-                            <th>Параметр</th>
-                            <th>Значение</th>
-                        </tr>
-                        <tr>
-                            <td>Время сервера</td>
-                            <td>{{ server_time }}</td>
-                        </tr>
-                        <tr>
-                            <td>Время работы</td>
-                            <td>{{ uptime }}</td>
-                        </tr>
-                        <tr>
-                            <td>Интервал анонсирования</td>
-                            <td>{{ announce_interval }}</td>
-                        </tr>
-                        <tr>
-                            <td>Всего торрентов</td>
-                            <td>{{ stats.total_torrents }}</td>
-                        </tr>
-                        <tr>
-                            <td>Всего пиров</td>
-                            <td>{{ stats.total_peers }}</td>
-                        </tr>
-                        <tr>
-                            <td>Всего сидов</td>
-                            <td>{{ stats.total_seeds }}</td>
-                        </tr>
-                        <tr>
-                            <td>Уникальных пиров</td>
-                            <td>{{ stats.unique_peers }}</td>
-                        </tr>
-                    </table>
-                </div>
-
-                <div class="info-block">
-                    <h2>Топ-10 активных торрентов</h2>
-                    <table>
-                        <tr>
-                            <th>Info Hash</th>
-                            <th>Количество пиров</th>
-                            <th>Количество сидов</th>
-                            <th>Личеров</th>
-                        </tr>
-                        {% for torrent in top_torrents %}
-                        <tr>
-                            <td>{{ torrent.info_hash }}</td>
-                            <td>{{ torrent.peer_count }}</td>
-                            <td>{{ torrent.seed_count }}</td>
-                            <td>{{ torrent.peer_count - torrent.seed_count }}</td>
-                        </tr>
-                        {% endfor %}
-                    </table>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-
         return render_template_string(
-            html_template,
+            STATS_TEMPLATE,  # Используем существующий шаблон статистики
             **stats_data
         )
 
@@ -478,7 +440,6 @@ def stats():
             json.dumps({'error': str(e)}), 
             mimetype='application/json'
         ), 500
-
 if __name__ == '__main__':
     # Проверка корректности хоста
     host = config['TRACKER'].get('host', '127.0.0.1')
