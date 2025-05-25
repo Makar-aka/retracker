@@ -321,7 +321,6 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '')
         password = request.form.get('password', '')
-        expected_username = config['STATS'].get('access_username')
         expected_password = config['STATS'].get('access_password')
         if username == expected_username and password == expected_password:
             session['logged_in'] = True
