@@ -8,13 +8,38 @@ import urllib.parse
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.DEBUG,  # Изменено на DEBUG для более детального логирования
+    level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Настройка доверенных прокси
+TRUSTED_PROXIES = os.getenv('TRUSTED_PROXIES', '').split(',')
+if not TRUSTED_PROXIES:
+    logger.warning("TRUSTED_PROXIES не настроены. Будут приниматься все заголовки X-Real-IP и X-Forwarded-For")
+
+def get_real_ip():
+    """Получает реальный IP адрес клиента из заголовков"""
+    # Логируем все заголовки для отладки
+    logger.debug("Headers: %s", dict(request.headers))
+    logger.debug("Remote addr: %s", request.remote_addr)
+    logger.debug("X-Real-IP: %s", request.headers.get('X-Real-IP'))
+    logger.debug("X-Forwarded-For: %s", request.headers.get('X-Forwarded-For'))
+
+    # Получаем IP из заголовков
+    if TRUSTED_PROXIES and request.remote_addr not in TRUSTED_PROXIES:
+        logger.warning(f"Запрос с недоверенного прокси: {request.remote_addr}")
+        return request.remote_addr
+
+    real_ip = request.headers.get('X-Real-IP') or \
+              request.headers.get('X-Forwarded-For', '').split(',')[0].strip() or \
+              request.remote_addr
+              
+    logger.info(f"Определен IP адрес: {real_ip} (remote_addr: {request.remote_addr})")
+    return real_ip
 
 # Создание директории для базы данных
 data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
@@ -80,7 +105,14 @@ def status():
     try:
         # Проверяем подключение к БД
         db.query("SELECT 1")
-        return Response("OK", mimetype='text/plain')
+        # Показываем информацию о клиенте
+        client_info = {
+            'remote_addr': request.remote_addr,
+            'x_real_ip': request.headers.get('X-Real-IP'),
+            'x_forwarded_for': request.headers.get('X-Forwarded-For'),
+            'determined_ip': get_real_ip()
+        }
+        return Response(str(client_info), mimetype='text/plain')
     except Exception as e:
         logger.error(f"Ошибка проверки статуса: {e}")
         return Response("ERROR", mimetype='text/plain'), 500
@@ -125,9 +157,9 @@ def announce():
             logger.warning(f"Получен некорректный порт от {request.remote_addr}: {port}")
             return Response(bencode({'failure reason': 'Invalid port'}), mimetype='text/plain')
 
-        # Обработка IP
-        ip = request.remote_addr
-        if not ip or not verify_ip(ip):
+        # Получение реального IP адреса
+        ip = get_real_ip()
+        if not verify_ip(ip):
             logger.warning(f"Некорректный IP адрес: {ip}")
             return Response(bencode({'failure reason': 'Invalid IP'}), mimetype='text/plain')
 
@@ -136,6 +168,7 @@ def announce():
             reported_ip = request.args.get('ip')
             if tr_cfg.verify_reported_ip and verify_ip(reported_ip):
                 ip = reported_ip
+                logger.debug(f"Использован reported_ip: {ip}")
 
         # Дополнительные параметры
         event = request.args.get('event', '')
@@ -147,10 +180,12 @@ def announce():
         numwant = min(int(request.args.get('numwant', tr_cfg.numwant)), 200)
 
         # Обновляем информацию о пире в БД
+        encoded_ip = encode_ip(ip)
         db.query(
             "REPLACE INTO tracker (info_hash, ip, port, left, update_time) VALUES (?, ?, ?, ?, ?)",
-            (info_hash, encode_ip(ip), port, left, TIMENOW)
+            (info_hash, encoded_ip, port, left, TIMENOW)
         )
+        logger.debug(f"Сохранен пир: {ip}({encoded_ip}):{port}")
 
         # Получаем список активных пиров
         peers_query = db.query(
