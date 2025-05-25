@@ -28,24 +28,36 @@ TRUSTED_PROXIES = os.getenv('TRUSTED_PROXIES',
 logger.info(f"Доверенные прокси: {TRUSTED_PROXIES}")
 
 def get_real_ip():
-    """Получает реальный IP адрес клиента из заголовков"""
-    # Логируем все заголовки для отладки
-    logger.debug("Headers: %s", dict(request.headers))
-    logger.debug("Remote addr: %s", request.remote_addr)
-    logger.debug("X-Real-IP: %s", request.headers.get('X-Real-IP'))
-    logger.debug("X-Forwarded-For: %s", request.headers.get('X-Forwarded-For'))
-
-    # Если запрос пришел от доверенного прокси
-    if request.remote_addr in TRUSTED_PROXIES:
-        # Используем X-Real-IP или первый IP из X-Forwarded-For
-        real_ip = request.headers.get('X-Real-IP') or \
-                  request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
-        if real_ip and verify_ip(real_ip):
-            logger.info(f"Использован IP из заголовков прокси: {real_ip}")
-            return real_ip
+    """Получает реальный IP адрес клиента с учетом режима работы"""
+    mode = config['TRACKER'].get('mode', 'direct')
     
-    # Если не получили IP из заголовков или прокси не доверенный
-    logger.warning(f"Используется IP источника запроса: {request.remote_addr}")
+    if mode == 'proxy':
+        # Логируем все заголовки для отладки в режиме прокси
+        logger.debug("Headers: %s", dict(request.headers))
+        logger.debug("Remote addr: %s", request.remote_addr)
+        logger.debug("X-Real-IP: %s", request.headers.get('X-Real-IP'))
+        logger.debug("X-Forwarded-For: %s", request.headers.get('X-Forwarded-For'))
+
+        # Проверяем доверенные прокси
+        trusted_proxies = config['TRACKER'].get('trusted_proxies', '').split(',')
+        if request.remote_addr in trusted_proxies:
+            # Получаем IP из заголовков в зависимости от настроек
+            if config['TRACKER'].getboolean('use_x_real_ip', True):
+                real_ip = request.headers.get('X-Real-IP')
+                if real_ip and verify_ip(real_ip):
+                    logger.info(f"Использован IP из X-Real-IP: {real_ip}")
+                    return real_ip
+                    
+            if config['TRACKER'].getboolean('use_x_forwarded_for', True):
+                forwarded_for = request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+                if forwarded_for and verify_ip(forwarded_for):
+                    logger.info(f"Использован IP из X-Forwarded-For: {forwarded_for}")
+                    return forwarded_for
+
+        logger.warning(f"Прокси {request.remote_addr} не в списке доверенных или некорректные заголовки")
+    else:
+        logger.debug(f"Прямое подключение от {request.remote_addr}")
+
     return request.remote_addr
 
 # Создание директории для базы данных
