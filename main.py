@@ -15,11 +15,10 @@ import datetime
 config = configparser.ConfigParser()
 config.read('config.ini')
 SECRET_KEY = config.get('FLASK', 'secret_key', fallback='your-very-secret-key')
-app = Flask(__name__)
-app.secret_key = SECRET_KEY
 
 # Создаем приложение Flask
 app = Flask(__name__)
+app.secret_key = SECRET_KEY
 app.start_time = time.time()
 
 # Создание директории для данных
