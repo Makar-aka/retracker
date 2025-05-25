@@ -15,10 +15,7 @@ class SQLiteCommon:
     def __init__(self, config: Dict):
         self.cfg = config
         self.random_fn = "RANDOM()"
-        # Создаем таблицу при инициализации
-        with self.get_connection() as conn:
-            conn.execute(self.cfg['table_schema'])
-            conn.commit()
+        self._migrate_schema()
 
     @contextmanager
     def get_connection(self):
@@ -27,8 +24,10 @@ class SQLiteCommon:
         try:
             conn = sqlite3.connect(
                 self.cfg['db_file_path'],
-                isolation_level=None  # Автоматический commit
+                isolation_level=None,  # Автоматический commit
+                check_same_thread=False  # Разрешаем использование в разных потоках
             )
+            conn.row_factory = sqlite3.Row  # Для удобного доступа к колонкам
             yield conn
         except Exception as e:
             logger.error(f"Ошибка соединения с SQLite: {e}")
@@ -39,6 +38,51 @@ class SQLiteCommon:
                     conn.close()
                 except:
                     pass
+
+    def _migrate_schema(self):
+        """Миграция схемы базы данных"""
+        try:
+            with self.get_connection() as conn:
+                # Получаем информацию о существующих колонках
+                cursor = conn.execute("PRAGMA table_info(tracker)")
+                columns = {row['name'] for row in cursor.fetchall()}
+
+                if 'left' not in columns:
+                    logger.info("Добавление колонки 'left' в таблицу tracker")
+                    # Создаем временную таблицу с новой схемой
+                    conn.execute("""
+                        CREATE TABLE tracker_new (
+                            info_hash CHAR(20),
+                            ip CHAR(8),
+                            port INTEGER,
+                            left INTEGER DEFAULT 0,
+                            update_time INTEGER,
+                            PRIMARY KEY (info_hash, ip, port)
+                        )
+                    """)
+                    
+                    # Копируем данные из старой таблицы если она существует
+                    try:
+                        conn.execute("""
+                            INSERT INTO tracker_new (info_hash, ip, port, update_time)
+                            SELECT info_hash, ip, port, update_time FROM tracker
+                        """)
+                    except sqlite3.OperationalError:
+                        pass  # Таблица не существует
+
+                    # Удаляем старую таблицу и переименовываем новую
+                    conn.execute("DROP TABLE IF EXISTS tracker")
+                    conn.execute("ALTER TABLE tracker_new RENAME TO tracker")
+                    logger.info("Миграция схемы базы данных успешно завершена")
+                else:
+                    logger.debug("Миграция схемы не требуется")
+
+        except Exception as e:
+            logger.error(f"Ошибка миграции схемы: {e}")
+            # Если что-то пошло не так, создаем таблицу заново
+            with self.get_connection() as conn:
+                conn.execute("DROP TABLE IF EXISTS tracker")
+                conn.execute(self.cfg['table_schema'])
 
     def query(self, query: str, params: tuple = None) -> List[Dict]:
         """Выполняет запрос и возвращает результат"""
@@ -55,7 +99,6 @@ class SQLiteCommon:
                     result = [dict(zip(columns, row)) for row in cursor.fetchall()]
                     return result
                 else:
-                    conn.commit()
                     return []
             except Exception as e:
                 logger.error(f"Ошибка выполнения запроса: {e}")
@@ -68,89 +111,74 @@ class SQLiteCommon:
     def escape(self, value: str) -> str:
         return value.replace("'", "''")
 
+
 class MySQLCommon:
     def __init__(self, config: Dict):
         self.cfg = config
-        self._connect()
         self.random_fn = "RAND()"
+        # Создаем таблицу при инициализации
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(self.cfg['table_schema'])
+                conn.commit()
 
-    def _connect(self):
-        """Создает новое соединение для текущего потока"""
-        if not hasattr(thread_local, 'mysql_db'):
-            thread_local.mysql_db = mysql.connector.connect(
+    @contextmanager
+    def get_connection(self):
+        """Контекстный менеджер для получения соединения"""
+        conn = None
+        try:
+            conn = mysql.connector.connect(
                 host=self.cfg.get('dbhost', 'localhost'),
                 user=self.cfg.get('dbuser', 'root'),
                 password=self.cfg.get('dbpasswd', ''),
                 database=self.cfg.get('dbname', 'tracker'),
                 charset='utf8mb4',
-                autocommit=True,  # Автоматический commit
+                autocommit=True,
                 pool_name='tracker_pool',
-                pool_size=5,  # Размер пула соединений
+                pool_size=5,
+                pool_reset_session=True,
                 get_warnings=True,
-                raise_on_warnings=True
+                raise_on_warnings=True,
+                connection_timeout=5
             )
-            # Создаем таблицу если она не существует
-            with thread_local.mysql_db.cursor() as cursor:
-                cursor.execute(self.cfg['table_schema'])
-                thread_local.mysql_db.commit()
-
-    @property
-    def db(self):
-        """Возвращает соединение для текущего потока"""
-        if not hasattr(thread_local, 'mysql_db') or not thread_local.mysql_db.is_connected():
-            self._connect()
-        return thread_local.mysql_db
-
-    def query(self, query: str, params: tuple = None) -> mysql.connector.cursor.MySQLCursor:
-        try:
-            cursor = self.db.cursor(dictionary=True, buffered=True)
-            if params:
-                cursor.execute(query, params)
-            else:
-                cursor.execute(query)
-            self.db.commit()
-            return cursor
-        except (mysql.connector.OperationalError, mysql.connector.InterfaceError) as e:
-            # Переподключаемся при потере соединения
-            if hasattr(thread_local, 'mysql_db'):
+            yield conn
+        except Exception as e:
+            logger.error(f"Ошибка соединения с MySQL: {e}")
+            raise
+        finally:
+            if conn:
                 try:
-                    thread_local.mysql_db.close()
+                    conn.close()
                 except:
                     pass
-                delattr(thread_local, 'mysql_db')
-            self._connect()
-            cursor = self.db.cursor(dictionary=True, buffered=True)
-            if params:
-                cursor.execute(query, params)
-            else:
-                cursor.execute(query)
-            self.db.commit()
-            return cursor
-        except Exception as e:
-            logger.error(f"Ошибка в query: {e}")
-            raise
+
+    def query(self, query: str, params: tuple = None) -> List[Dict]:
+        """Выполняет запрос и возвращает результат"""
+        with self.get_connection() as conn:
+            try:
+                cursor = conn.cursor(dictionary=True, buffered=True)
+                try:
+                    if params:
+                        cursor.execute(query, params)
+                    else:
+                        cursor.execute(query)
+
+                    if query.strip().upper().startswith('SELECT'):
+                        result = cursor.fetchall()
+                        return result
+                    else:
+                        conn.commit()
+                        return []
+                finally:
+                    cursor.close()
+            except Exception as e:
+                logger.error(f"Ошибка выполнения запроса: {e}")
+                raise
 
     def fetch_rowset(self, query: str, params: tuple = None) -> List[Dict]:
-        try:
-            cursor = self.query(query, params)
-            result = cursor.fetchall()
-            cursor.close()
-            return result
-        except Exception as e:
-            logger.error(f"Ошибка в fetch_rowset: {e}")
-            return []
+        """Получает набор строк из базы"""
+        return self.query(query, params)
 
     def escape(self, value: str) -> str:
-        return self.db.converter.escape(value)
-
-    def __del__(self):
-        """Закрываем соединение при уничтожении объекта"""
-        if hasattr(thread_local, 'mysql_db'):
-            try:
-                thread_local.mysql_db.close()
-            except:
-                pass
-
-# Добавляем логирование
-import logging
-logger = logging.getLogger(__name__)
+        with self.get_connection() as conn:
+            return conn.converter.escape(value)
