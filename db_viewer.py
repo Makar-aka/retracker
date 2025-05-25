@@ -66,16 +66,11 @@ def view_db(db_path):
             print(f"Info Hash: {format_info_hash(row['info_hash'])}")
             print(f"IP: {decode_ip(row['ip'])}")
             print(f"Port: {row['port']}")
-            print(f"Left: {row.get('left', 'N/A')}")
+            try:
+                left = row['left']
+                print(f"Left: {left}")
+            except:
+                print("Left: N/A")
             print(f"Update Time: {datetime.fromtimestamp(row['update_time'])}")
             
-    except Exception as e:
-        print(f"Ошибка: {e}")
-    finally:
-        if 'conn' in locals():
-            conn.close()
-
-if __name__ == '__main__':
-    import sys
-    db_path = sys.argv[1] if len(sys.argv) > 1 else 'data/tracker.sqlite'
-    view_db(db_path)
+            # Дополнительно покажем все доступные колонки и их значения для 
