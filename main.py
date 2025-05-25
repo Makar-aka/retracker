@@ -6,6 +6,7 @@ from logging.handlers import RotatingFileHandler
 import logging
 import os
 import urllib.parse
+import socket
 
 # Создаем приложение Flask
 app = Flask(__name__)
@@ -19,7 +20,7 @@ data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 if not os.path.exists(data_dir):
     os.makedirs(data_dir)
 
-# Создаем директорию для логов
+# Настройка логирования
 log_file = config['LOGGING'].get('log_file', 'data/tracker.log')
 log_dir = os.path.dirname(log_file)
 if not os.path.exists(log_dir):
@@ -36,7 +37,7 @@ if config['LOGGING'].getboolean('clear_on_start', False) and os.path.exists(log_
     except Exception as e:
         print(f"Ошибка при очистке старых логов: {e}")
 
-# Настройка логирования
+# Настройка обработчиков логов
 handlers = []
 
 # Файловый обработчик с ротацией
@@ -64,56 +65,40 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.info("Логирование инициализировано")
 
-# Настройка доверенных прокси
-TRUSTED_PROXIES = os.getenv('TRUSTED_PROXIES', 
-    config['TRACKER'].get('trusted_proxies', '127.0.0.1')).split(',')
+# Настройка доверенных прокси и режима работы
+mode = config['TRACKER'].get('mode', 'direct')
+TRUSTED_PROXIES = config['TRACKER'].get('trusted_proxies', '127.0.0.1').split(',')
+logger.info(f"Режим работы: {mode}")
 logger.info(f"Доверенные прокси: {TRUSTED_PROXIES}")
 
 def get_real_ip():
     """Получает реальный IP адрес клиента с учетом режима работы"""
-    mode = config['TRACKER'].get('mode', 'direct')
-    
     if mode == 'proxy':
-        # Логируем все заголовки для отладки в режиме прокси
+        # Логируем заголовки в режиме дебага
         logger.debug("Headers: %s", dict(request.headers))
         logger.debug("Remote addr: %s", request.remote_addr)
-        logger.debug("X-Real-IP: %s", request.headers.get('X-Real-IP'))
-        logger.debug("X-Forwarded-For: %s", request.headers.get('X-Forwarded-For'))
 
-        # Проверяем доверенные прокси
-        trusted_proxies = config['TRACKER'].get('trusted_proxies', '').split(',')
-        if request.remote_addr in trusted_proxies:
-            # Получаем IP из заголовков в зависимости от настроек
+        if request.remote_addr in TRUSTED_PROXIES:
+            # Пробуем получить IP из заголовков
             if config['TRACKER'].getboolean('use_x_real_ip', True):
                 real_ip = request.headers.get('X-Real-IP')
                 if real_ip and verify_ip(real_ip):
-                    logger.info(f"Использован IP из X-Real-IP: {real_ip}")
+                    logger.debug(f"Использован X-Real-IP: {real_ip}")
                     return real_ip
-                    
+
             if config['TRACKER'].getboolean('use_x_forwarded_for', True):
                 forwarded_for = request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
                 if forwarded_for and verify_ip(forwarded_for):
-                    logger.info(f"Использован IP из X-Forwarded-For: {forwarded_for}")
+                    logger.debug(f"Использован X-Forwarded-For: {forwarded_for}")
                     return forwarded_for
 
-        logger.warning(f"Прокси {request.remote_addr} не в списке доверенных или некорректные заголовки")
+            logger.warning(f"Не удалось получить IP из заголовков прокси")
     else:
         logger.debug(f"Прямое подключение от {request.remote_addr}")
 
     return request.remote_addr
 
-# Создание директории для базы данных
-data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
-if not os.path.exists(data_dir):
-    os.makedirs(data_dir)
-    logger.info(f"Создана директория для базы данных: {data_dir}")
-
-# Загрузка конфигурации
-config = configparser.ConfigParser()
-config.read('config.ini')
-
-logger.info("Загрузка конфигурации...")
-
+# Инициализация конфигурации трекера
 tr_cfg = Config(
     tr_cache_type=config['CACHE']['type'],
     tr_db_type=config['DB']['type'],
@@ -326,12 +311,20 @@ def scrape():
         return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
 
 if __name__ == '__main__':
-    host = config['TRACKER'].get('host', '0.0.0.0')
+    # Проверка корректности хоста
+    host = config['TRACKER'].get('host', '127.0.0.1')
     port = config['TRACKER'].getint('port', 8080)
+    
+    try:
+        socket.gethostbyname(host)
+    except socket.gaierror:
+        logger.warning(f"Некорректный хост: {host}, использую localhost")
+        host = 'localhost'
+    
     logger.info(f"Запуск сервера на {host}:{port}")
     app.run(
         host=host,
         port=port,
-        debug=True,  # Включаем режим отладки
-        use_reloader=True  # Автоматическая перезагрузка при изменении кода
+        debug=config['TRACKER'].getboolean('debug', True),
+        use_reloader=config['TRACKER'].getboolean('use_reloader', True)
     )
