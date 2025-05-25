@@ -3,7 +3,7 @@ import sqlite3
 from typing import Dict, List, Any, Optional
 from threading import local
 
-# Добавляем thread-local storage
+# Р”РѕР±Р°РІР»СЏРµРј thread-local storage
 thread_local = local()
 
 class SQLiteCommon:
@@ -13,7 +13,7 @@ class SQLiteCommon:
         self.random_fn = "RANDOM()"
 
     def _connect(self):
-        """Создает новое соединение для текущего потока"""
+        """РЎРѕР·РґР°РµС‚ РЅРѕРІРѕРµ СЃРѕРµРґРёРЅРµРЅРёРµ РґР»СЏ С‚РµРєСѓС‰РµРіРѕ РїРѕС‚РѕРєР°"""
         if not hasattr(thread_local, 'db'):
             thread_local.db = sqlite3.connect(self.cfg['db_file_path'])
             thread_local.db.execute(self.cfg['table_schema'])
@@ -21,7 +21,7 @@ class SQLiteCommon:
 
     @property
     def db(self):
-        """Возвращает соединение для текущего потока"""
+        """Р’РѕР·РІСЂР°С‰Р°РµС‚ СЃРѕРµРґРёРЅРµРЅРёРµ РґР»СЏ С‚РµРєСѓС‰РµРіРѕ РїРѕС‚РѕРєР°"""
         if not hasattr(thread_local, 'db'):
             self._connect()
         return thread_local.db
@@ -33,7 +33,7 @@ class SQLiteCommon:
             return self.db.execute(query)
         except sqlite3.OperationalError as e:
             if "thread" in str(e):
-                # Если ошибка связана с потоками, пересоздаем соединение
+                # Р•СЃР»Рё РѕС€РёР±РєР° СЃРІСЏР·Р°РЅР° СЃ РїРѕС‚РѕРєР°РјРё, РїРµСЂРµСЃРѕР·РґР°РµРј СЃРѕРµРґРёРЅРµРЅРёРµ
                 if hasattr(thread_local, 'db'):
                     delattr(thread_local, 'db')
                 self._connect()
