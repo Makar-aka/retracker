@@ -1,4 +1,4 @@
-from flask import Flask, request, Response
+from flask import Flask, request, Response, render_template_string
 from tracker import *
 from db_handlers import SQLiteCommon
 import configparser
@@ -340,17 +340,135 @@ def stats():
             LIMIT 10
         """, (TIMENOW - tr_cfg.announce_interval,))
 
+        # Подготавливаем данные
         stats_data = {
-            'server_time': TIMENOW,
-            'uptime': int(time.time() - app.start_time),
-            'announce_interval': tr_cfg.announce_interval,
+            'server_time': datetime.datetime.fromtimestamp(TIMENOW).strftime('%Y-%m-%d %H:%M:%S'),
+            'uptime': str(datetime.timedelta(seconds=int(time.time() - app.start_time))),
+            'announce_interval': f"{tr_cfg.announce_interval} сек.",
             'stats': total_stats[0] if total_stats else {},
             'top_torrents': [dict(t) for t in (top_torrents if top_torrents else [])]
         }
 
-        return Response(
-            json.dumps(stats_data, indent=2), 
-            mimetype='application/json'
+        # HTML шаблон
+        html_template = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Статистика трекера</title>
+            <meta charset="utf-8">
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 20px;
+                    background-color: #f5f5f5;
+                }
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin: 20px 0;
+                    background-color: white;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                }
+                th, td {
+                    padding: 12px;
+                    text-align: left;
+                    border-bottom: 1px solid #ddd;
+                }
+                th {
+                    background-color: #4CAF50;
+                    color: white;
+                }
+                tr:nth-child(even) {
+                    background-color: #f9f9f9;
+                }
+                tr:hover {
+                    background-color: #f5f5f5;
+                }
+                h1, h2 {
+                    color: #333;
+                }
+                .info-block {
+                    background-color: white;
+                    padding: 15px;
+                    margin-bottom: 20px;
+                    border-radius: 4px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Статистика трекера</h1>
+                
+                <div class="info-block">
+                    <h2>Общая информация</h2>
+                    <table>
+                        <tr>
+                            <th>Параметр</th>
+                            <th>Значение</th>
+                        </tr>
+                        <tr>
+                            <td>Время сервера</td>
+                            <td>{{ server_time }}</td>
+                        </tr>
+                        <tr>
+                            <td>Время работы</td>
+                            <td>{{ uptime }}</td>
+                        </tr>
+                        <tr>
+                            <td>Интервал анонсирования</td>
+                            <td>{{ announce_interval }}</td>
+                        </tr>
+                        <tr>
+                            <td>Всего торрентов</td>
+                            <td>{{ stats.total_torrents }}</td>
+                        </tr>
+                        <tr>
+                            <td>Всего пиров</td>
+                            <td>{{ stats.total_peers }}</td>
+                        </tr>
+                        <tr>
+                            <td>Всего сидов</td>
+                            <td>{{ stats.total_seeds }}</td>
+                        </tr>
+                        <tr>
+                            <td>Уникальных пиров</td>
+                            <td>{{ stats.unique_peers }}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="info-block">
+                    <h2>Топ-10 активных торрентов</h2>
+                    <table>
+                        <tr>
+                            <th>Info Hash</th>
+                            <th>Количество пиров</th>
+                            <th>Количество сидов</th>
+                            <th>Личеров</th>
+                        </tr>
+                        {% for torrent in top_torrents %}
+                        <tr>
+                            <td>{{ torrent.info_hash }}</td>
+                            <td>{{ torrent.peer_count }}</td>
+                            <td>{{ torrent.seed_count }}</td>
+                            <td>{{ torrent.peer_count - torrent.seed_count }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        return render_template_string(
+            html_template,
+            **stats_data
         )
 
     except Exception as e:
