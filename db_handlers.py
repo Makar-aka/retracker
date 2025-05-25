@@ -2,81 +2,71 @@ import mysql.connector
 import sqlite3
 from typing import Dict, List, Any, Optional
 from threading import local
+from contextlib import contextmanager
+import logging
 
-# Добавляем thread-local storage
+# Настройка логирования
+logger = logging.getLogger(__name__)
+
+# Thread-local storage
 thread_local = local()
 
 class SQLiteCommon:
     def __init__(self, config: Dict):
         self.cfg = config
-        self._connect()
         self.random_fn = "RANDOM()"
+        # Создаем таблицу при инициализации
+        with self.get_connection() as conn:
+            conn.execute(self.cfg['table_schema'])
+            conn.commit()
 
-    def _connect(self):
-        """Создает новое соединение для текущего потока"""
-        if not hasattr(thread_local, 'sqlite_db'):
-            thread_local.sqlite_db = sqlite3.connect(
-                self.cfg['db_file_path'],
-                check_same_thread=False  # Разрешаем использование в разных потоках
-            )
-            thread_local.sqlite_db.execute(self.cfg['table_schema'])
-            thread_local.sqlite_db.commit()
-
-    @property
-    def db(self):
-        """Возвращает соединение для текущего потока"""
-        if not hasattr(thread_local, 'sqlite_db'):
-            self._connect()
-        return thread_local.sqlite_db
-
-    def query(self, query: str, params: tuple = None) -> sqlite3.Cursor:
+    @contextmanager
+    def get_connection(self):
+        """Контекстный менеджер для получения соединения"""
+        conn = None
         try:
-            cursor = None
-            if params:
-                cursor = self.db.execute(query, params)
-            else:
-                cursor = self.db.execute(query)
-            self.db.commit()  # Фиксируем изменения
-            return cursor
-        except sqlite3.OperationalError as e:
-            if "thread" in str(e) or "locked" in str(e):
-                # Если ошибка связана с потоками или блокировкой, пересоздаем соединение
-                if hasattr(thread_local, 'sqlite_db'):
-                    try:
-                        thread_local.sqlite_db.close()
-                    except:
-                        pass
-                    delattr(thread_local, 'sqlite_db')
-                self._connect()
-                if params:
-                    cursor = self.db.execute(query, params)
-                else:
-                    cursor = self.db.execute(query)
-                self.db.commit()
-                return cursor
+            conn = sqlite3.connect(
+                self.cfg['db_file_path'],
+                isolation_level=None  # Автоматический commit
+            )
+            yield conn
+        except Exception as e:
+            logger.error(f"Ошибка соединения с SQLite: {e}")
             raise
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
+
+    def query(self, query: str, params: tuple = None) -> List[Dict]:
+        """Выполняет запрос и возвращает результат"""
+        with self.get_connection() as conn:
+            try:
+                cursor = conn.cursor()
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+                
+                if query.strip().upper().startswith(('SELECT', 'PRAGMA')):
+                    columns = [col[0] for col in cursor.description] if cursor.description else []
+                    result = [dict(zip(columns, row)) for row in cursor.fetchall()]
+                    return result
+                else:
+                    conn.commit()
+                    return []
+            except Exception as e:
+                logger.error(f"Ошибка выполнения запроса: {e}")
+                raise
 
     def fetch_rowset(self, query: str, params: tuple = None) -> List[Dict]:
-        try:
-            cursor = self.query(query, params)
-            columns = [col[0] for col in cursor.description]
-            result = [dict(zip(columns, row)) for row in cursor.fetchall()]
-            cursor.close()
-            return result
-        except Exception as e:
-            logger.error(f"Ошибка в fetch_rowset: {e}")
-            return []
+        """Получает набор строк из базы"""
+        return self.query(query, params)
 
     def escape(self, value: str) -> str:
         return value.replace("'", "''")
-
-    def __del__(self):
-        """Закрываем соединение при уничтожении объекта"""
-        if hasattr(thread_local, 'sqlite_db'):
-            try:
-                thread_local.sqlite_db.close()
-            except:
-                pass
 
 class MySQLCommon:
     def __init__(self, config: Dict):
