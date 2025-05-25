@@ -56,7 +56,21 @@ cp config/config_example.ini config/config.ini
 - Трекер доступен напрямую, без прокси-сервера.
 - Вы хотите получать IP-адреса клиентов напрямую из соединения.
  
-Пример настройки:
+## Конфигурация
+
+Все настройки — в `config/config.ini`.  
+Пример секций:
+```ini
+[FLASK] secret_key = your-very-secret-key
+[LOGGING] log_file = tracker.log level = INFO format = %(asctime)s [%(levelname)s] %(message)s console_output = True max_bytes = 5242880 backup_count = 5 clear_on_start = False
+[TRACKER] host = 0.0.0.0 port = 8080 announce_interval = 1800 peer_expire_factor = 2 ignore_reported_ip = False verify_reported_ip = True allow_internal_ip = False numwant = 50 run_gc_key = gc
+[CACHE] type = sqlite
+[DB] type = sqlite
+[STATS] access_username = admin access_password = password
+```
+
+---
+
 ## Локальный запуск (консоль)
 
 1. Установите зависимости:
@@ -82,21 +96,6 @@ python3 main.py
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now retracker
-```
-
----
-
-## Конфигурация
-
-Все настройки — в `config/config.ini`.  
-Пример секций:
-```ini
-[FLASK] secret_key = your-very-secret-key
-[LOGGING] log_file = tracker.log level = INFO format = %(asctime)s [%(levelname)s] %(message)s console_output = True max_bytes = 5242880 backup_count = 5 clear_on_start = False
-[TRACKER] host = 0.0.0.0 port = 8080 announce_interval = 1800 peer_expire_factor = 2 ignore_reported_ip = False verify_reported_ip = True allow_internal_ip = False numwant = 50 run_gc_key = gc
-[CACHE] type = sqlite
-[DB] type = sqlite
-[STATS] access_username = admin access_password = password
 ```
 
 ---
