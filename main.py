@@ -11,19 +11,16 @@ import time
 import json
 import datetime
 
-# --- Новый секретный ключ для сессий ---
-SECRET_KEY = os.environ.get('FLASK_SECRET_KEY', 'your-very-secret-key')
+# Загрузка конфигурации
+config = configparser.ConfigParser()
+config.read('config.ini')
+SECRET_KEY = config.get('FLASK', 'secret_key', fallback='your-very-secret-key')
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
-app.start_time = time.time()
 
 # Создаем приложение Flask
 app = Flask(__name__)
 app.start_time = time.time()
-
-# Загрузка конфигурации
-config = configparser.ConfigParser()
-config.read('config.ini')
 
 # Создание директории для данных
 data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
