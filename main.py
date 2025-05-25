@@ -7,7 +7,19 @@ import logging
 import os
 import urllib.parse
 
-# Создаем директорию для логов если нужно
+# Создаем приложение Flask
+app = Flask(__name__)
+
+# Загрузка конфигурации
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+# Создание директории для данных
+data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+if not os.path.exists(data_dir):
+    os.makedirs(data_dir)
+
+# Создаем директорию для логов
 log_file = config['LOGGING'].get('log_file', 'data/tracker.log')
 log_dir = os.path.dirname(log_file)
 if not os.path.exists(log_dir):
@@ -43,7 +55,7 @@ if config['LOGGING'].getboolean('console_output', True):
     console_handler.setFormatter(logging.Formatter(config['LOGGING'].get('format', '%(asctime)s [%(levelname)s] %(message)s')))
     handlers.append(console_handler)
 
-# Применяем настройки
+# Применяем настройки логирования
 logging.basicConfig(
     level=getattr(logging, config['LOGGING'].get('level', 'INFO').upper()),
     handlers=handlers
@@ -51,22 +63,6 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 logger.info("Логирование инициализировано")
-
-# Настройка логирования
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
-
-# Загрузка конфигурации
-config = configparser.ConfigParser()
-config.read('config.ini')
-
-logger.info("Загрузка конфигурации...")
 
 # Настройка доверенных прокси
 TRUSTED_PROXIES = os.getenv('TRUSTED_PROXIES', 
