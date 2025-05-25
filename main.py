@@ -129,11 +129,11 @@ default_cfg = {
     'db_file_path': os.path.join(data_dir, 'tracker.sqlite'),
     'table_name': 'tracker',
     'table_schema': '''CREATE TABLE IF NOT EXISTS tracker (
-        info_hash CHAR(20),
-        ip CHAR(8),
-        port INTEGER,
+        info_hash CHAR(20) NOT NULL,
+        ip CHAR(8) NOT NULL,
+        port INTEGER NOT NULL DEFAULT 0,
         left INTEGER DEFAULT 0,
-        update_time INTEGER,
+        update_time INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (info_hash, ip, port)
     )'''
 }

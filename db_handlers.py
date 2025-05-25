@@ -13,39 +13,11 @@ class SQLiteCommon:
     def __init__(self, config: Dict):
         self.cfg = config
         self.random_fn = "RANDOM()"
-        self._migrate_schema()
-
-    @property
-    def db(self):
-        """Возвращает соединение для текущего потока"""
-        if not hasattr(thread_local, 'sqlite_db'):
-            thread_local.sqlite_db = sqlite3.connect(
-                self.cfg['db_file_path'],
-                check_same_thread=False
-            )
-            thread_local.sqlite_db.row_factory = sqlite3.Row
-        return thread_local.sqlite_db
-
-    def _migrate_schema(self):
-        """Миграция схемы базы данных"""
-        try:
-            with self.db as conn:
-                cursor = conn.execute("PRAGMA table_info(tracker)")
-                columns = {row['name'] for row in cursor.fetchall()}
-
-                if 'left' not in columns:
-                    logger.info("Добавление колонки 'left' в таблицу tracker")
-                    conn.executescript(self.cfg['table_schema'])
-                    conn.commit()
-                    logger.info("Миграция схемы базы данных успешно завершена")
-                else:
-                    logger.debug("Миграция схемы не требуется")
-
-        except Exception as e:
-            logger.error(f"Ошибка миграции схемы: {e}")
-            with self.db as conn:
-                conn.executescript(self.cfg['table_schema'])
-                conn.commit()
+        
+        # Создаем БД и таблицу при инициализации
+        with self.get_connection() as conn:
+            conn.execute(self.cfg['table_schema'])
+            conn.commit()
 
     def query(self, query: str, params: tuple = None) -> List[Dict]:
         """Выполняет запрос и возвращает результат"""
