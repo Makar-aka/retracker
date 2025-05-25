@@ -315,11 +315,22 @@ if __name__ == '__main__':
     host = config['TRACKER'].get('host', '127.0.0.1')
     port = config['TRACKER'].getint('port', 8080)
     
-    try:
-        socket.gethostbyname(host)
-    except socket.gaierror:
-        logger.warning(f"Некорректный хост: {host}, использую localhost")
-        host = 'localhost'
+    def is_valid_ip(ip):
+        try:
+            # Проверяем является ли строка валидным IP адресом
+            parts = ip.split('.')
+            return len(parts) == 4 and all(0 <= int(part) <= 255 for part in parts)
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+    # Проверяем хост
+    if host != '0.0.0.0' and not is_valid_ip(host):
+        try:
+            # Пробуем DNS резолвинг только если это не IP адрес
+            socket.gethostbyname(host)
+        except socket.gaierror:
+            logger.warning(f"Некорректный хост: {host}, использую localhost")
+            host = 'localhost'
     
     logger.info(f"Запуск сервера на {host}:{port}")
     app.run(
