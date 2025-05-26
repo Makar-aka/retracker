@@ -1,76 +1,84 @@
 # retracker
 
-**retracker** — это легковесный BitTorrent-трекер на Flask с хранением конфигурации, базы данных и шаблонов в отдельных папках.  
-Работает как в интерактивном режиме (консоль), так и как systemd-сервис.
+retracker - is a lightweight BitTorrent tracker built with Flask, storing configuration, database, and templates in separate folders.  
+It works both in interactive mode (console) and as a systemd service.
 
 ---
 
-## Возможности
+## Features
 
-- BitTorrent-трекер с поддержкой announce/scrape
-- Веб-интерфейс статистики с авторизацией (Flask-сессии)
-- Гибкая настройка через config.ini
-- Логирование с ротацией
-- Универсальный запуск: консоль, systemd
-- Поддержка работы в режимах **proxy** и **direct**
+- BitTorrent tracker with announce/scrape support
+- Web statistics interface with authentication (Flask sessions)
+- Flexible configuration via config.ini
+- Log rotation support
+- Universal launch: console or systemd
+- Supports **proxy** and **direct** operation modes
+
 ---
 
-## Зачем нужен? 
-•	Для локальных сетей (на пример, провайдера или внутри организации).\
-•	Для частных торрент-сообществ.\
-•	Для тестирования и разработки BitTorrent-клиентов.\
-•	Для случаев, когда нужен простой и прозрачный трекер без лишних функций.
+## Use Cases
 
-`retracker не требует регистрации пользователей, не хранит файлы, а только координирует пиры для обмена данными по протоколу BitTorrent.`
+- For local networks (e.g., ISP or within an organization)
+- For private torrent communities
+- For testing and developing BitTorrent clients
+- When you need a simple and transparent tracker without extra features
 
-## Быстрый старт
+`retracker does not require user registration, does not store files, but only coordinates peers for data exchange via the BitTorrent protocol.`
 
-### 1. Клонирование репозитория
+---
+
+## Quick Start
+
+### 1. Clone the repository
+
 ```
 git clone https://github.com/Makar-aka/retracker.git cd retracker
 ```
-### 2. Настройка конфигурации
 
-Скопируйте пример конфига и отредактируйте под себя:
+### 2. Configure
+
+Copy the example config and edit it as needed:
 
 cp config/config_example.ini config/config.ini
 
 
-**Обязательные параметры:**
-- `[FLASK]` — секретный ключ для сессий авторизации в статистике
-- `[STATS]` — логин и пароль для входа в статистику
-- `[TRACKER]` — порт, host, интервал анонса и др.
+**Required parameters:**
+- `[FLASK]` — secret key for session authorization in statistics
+- `[STATS]` — login and password for statistics access
+- `[TRACKER]` — port, host, announce interval, and other options
 
 ---
 
-## Режимы работы: proxy и direct
+## Operation Modes: proxy and direct
 
-Трекер может работать в двух режимах, которые задаются параметром `mode` в секции `[TRACKER]` файла `config.ini`:
+The tracker can work in two modes, set by the `mode` parameter in the `[TRACKER]` section of `config.ini`:
 
-- **direct** — прямое подключение, IP-адрес клиента берётся из стандартного соединения (по умолчанию).
-- **proxy** — используется, если трекер работает за обратным прокси (например, nginx, haproxy). В этом режиме трекер определяет реальный IP клиента по заголовкам `X-Real-IP` и/или `X-Forwarded-For`.
+- `direct` — direct connection, the client's IP address is taken from the standard connection (default).
+- `proxy` — used if the tracker is behind a reverse proxy (e.g., nginx, haproxy). In this mode, the tracker determines the real client IP from the `X-Real-IP` and/or `X-Forwarded-For` headers.
 
-Если трекер работает за обратным прокси-сервером, то все входящие подключения для приложения будут приходить с одного и того же IP-адреса (адреса прокси). В этом случае невозможно определить реальный IP-адрес пользователя стандартным способом.  
-Режим `proxy` позволяет получать настоящий IP-адрес клиента из специальных HTTP-заголовков, которые прокси-сервер добавляет к каждому запросу. Это важно для корректной работы трекера, учёта пиров и предотвращения злоупотреблений.
+If the tracker is behind a reverse proxy, all incoming connections will appear to come from the proxy's IP address. In this case, it's impossible to determine the real user's IP in the standard way.  
+The `proxy` mode allows you to get the real client IP from special HTTP headers added by the proxy server. This is important for correct tracker operation, peer accounting, and abuse prevention.
 
-**Используйте режим `proxy`, если:**
-- Вы запускаете трекер за nginx, haproxy, cloudflare или другим обратным прокси.
-- Вам нужно видеть реальные IP-адреса пользователей, а не адрес прокси.
+Use `proxy` mode if:
+- You run the tracker behind nginx, haproxy, cloudflare, or another reverse proxy.
+- You need to see real user IP addresses, not the proxy's address.
 
-- Чтобы режим `proxy` работал корректно, прокси-сервер должен передавать реальный IP клиента в заголовках\
-см. доки по настройке вашего прокси-сервера.
+- For `proxy` mode to work correctly, your proxy server must forward the real client IP in headers.  
+See your proxy server's documentation for setup details.
 
-**Используйте режим `direct`, если:**
-- Трекер доступен напрямую, без прокси-сервера.
-- Вы хотите получать IP-адреса клиентов напрямую из соединения.
- 
-## Конфигурация
+Use `direct` mode if:
+- The tracker is accessible directly, without a proxy server.
+- You want to get client IP addresses directly from the connection.
 
-Все настройки — в `config/config.ini`.  
-Пример секций:
+---
+
+## Configuration
+
+All settings are in `config/config.ini`.  
+Example sections:
 ```ini
 [FLASK] 
-secret_key = ваш_рандомный_ключик_для_сессий_авторизации
+secret_key = your_random_session_secret_key
 [LOGGING]
 log_file = tracker.log 
 level = INFO 
@@ -104,26 +112,27 @@ access_password = password
 
 ---
 
-## Локальный запуск (консоль)
+## Local Launch (console)
 
-1. Установите зависимости:
+1. Install dependencies:
 ```sh
 pip install -r requirements.txt
 ```
-2. Запустите сервер:
+2. Start the server:
 ```sh
 python3 main.py
 ```
 
+
 ---
 
-## Запуск как systemd-сервис
+## Running as a systemd Service
 
-1. Скопируйте и отредактируйте `retracker.service_example`:
-    - Укажите абсолютные пути к рабочей директории и main.py
-    - Укажите пользователя и группу
+1. Copy and edit `retracker.service_example`:
+    - Specify absolute paths to the working directory and main.py
+    - Set the user and group
 
-2. Скопируйте файл в `/etc/systemd/system/retracker.service` и выполните:
+2. Copy the file to `/etc/systemd/system/retracker.service` and run:
 
 ```sh
 sudo systemctl daemon-reload
@@ -132,14 +141,14 @@ sudo systemctl enable --now retracker
 
 ---
 
-## Вход в статистику
+## Accessing Statistics
 
-- Откройте `http://ваш_сервер/stat` в браузере.
-- Введите логин и пароль из секции `[STATS]` файла config.ini.
+- Open `http://your_server/stat` in your browser.
+- Enter the login and password from the `[STATS]` section of config.ini.
 
 ---
 
-## Обновление
+## Update
 
 ```
 git pull 
@@ -150,10 +159,10 @@ systemctl restart retracker
 
 ---
 
-## Лицензия
+## License
 
 MIT
 
 ---
 
-**Автор:** [MakarSPB](https://github.com/Makar-aka)
+Author: [MakarSPB](https://github.com/Makar-aka)
