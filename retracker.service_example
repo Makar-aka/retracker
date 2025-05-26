@@ -9,5 +9,7 @@ Group=ваша группа
 ExecStart=/usr/bin/python3 /до/main.py файла
 Restart=on-failure
 RestartSec=3
+StandardOutput=journal
+StandardError=inherit
 [Install]
 WantedBy=multi-user.target
