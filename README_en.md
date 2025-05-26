@@ -1,6 +1,6 @@
 # retracker
 
-retracker - is a lightweight BitTorrent tracker built with Flask, storing configuration, database, and templates in separate folders.  
+retracker - is a lightweight BitTorrent tracker built with Flask.  
 It works both in interactive mode (console) and as a systemd service.
 
 ---
