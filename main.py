@@ -10,6 +10,8 @@ import socket
 import time
 import json
 import datetime
+from functools import wraps
+import traceback
 
 def get_path(docker_path, local_path):
     return docker_path if os.path.exists(docker_path) else local_path
@@ -149,11 +151,12 @@ def status():
 @app.route('/announce')
 def announce():
     try:
+        now = int(time.time())
         if tr_cfg.run_gc_key in request.args:
             logger.info("Запущена сборка мусора")
             announce_interval = max(int(tr_cfg.announce_interval), 60)
             expire_factor = max(float(tr_cfg.peer_expire_factor), 2)
-            peer_expire_time = TIMENOW - int(announce_interval * expire_factor)
+            peer_expire_time = now - int(announce_interval * expire_factor)
             result = db.query("DELETE FROM tracker WHERE update_time < ?", (peer_expire_time,))
             logger.info(f"Удалено устаревших записей: {len(result) if result else 0}")
             if hasattr(tr_cache, 'gc'):
@@ -203,13 +206,13 @@ def announce():
         encoded_ip = encode_ip(ip)
         db.query(
             "REPLACE INTO tracker (info_hash, ip, port, left, update_time) VALUES (?, ?, ?, ?, ?)",
-            (info_hash, encoded_ip, port, left, TIMENOW)
+            (info_hash, encoded_ip, port, left, now)
         )
         logger.debug(f"Сохранен пир: {ip}({encoded_ip}):{port}")
 
         peers_query = db.query(
             "SELECT ip, port, left FROM tracker WHERE info_hash = ? AND update_time > ? ORDER BY RANDOM() LIMIT ?",
-            (info_hash, TIMENOW - tr_cfg.announce_interval, numwant)
+            (info_hash, now - tr_cfg.announce_interval, numwant)
         )
 
         peers = []
@@ -238,7 +241,7 @@ def announce():
         return Response(bencode(output), mimetype='text/plain')
 
     except Exception as e:
-        logger.error(f"Ошибка обработки announce запроса: {e}")
+        logger.error(f"Ошибка обработки announce запроса: {e}\n{traceback.format_exc()}")
         return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
 
 @app.route('/scrape')
@@ -267,13 +270,13 @@ def scrape():
                         'incomplete': total - complete
                     }
             except Exception as e:
-                logger.error(f"Ошибка обработки info_hash в scrape: {e}")
+                logger.error(f"Ошибка обработки info_hash в scrape: {e}\n{traceback.format_exc()}")
                 continue
 
         return Response(bencode({'files': files}), mimetype='text/plain')
 
     except Exception as e:
-        logger.error(f"Ошибка обработки scrape запроса: {e}")
+        logger.error(f"Ошибка обработки scrape запроса: {e}\n{traceback.format_exc()}")
         return Response(bencode({'failure reason': str(e)}), mimetype='text/plain')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -298,7 +301,6 @@ def logout():
     return redirect(url_for('login'))
 
 def login_required(f):
-    from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get('logged_in'):
@@ -306,13 +308,11 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-import os
-
 @app.route('/stat')
 @login_required
 def stats():
     try:
-        
+        now = int(time.time())
         total_stats = db.query("""
             SELECT 
                 COUNT(DISTINCT info_hash) as total_torrents,
@@ -321,7 +321,7 @@ def stats():
                 COUNT(DISTINCT ip) as unique_peers
             FROM tracker 
             WHERE update_time > ?
-        """, (TIMENOW - tr_cfg.announce_interval,))
+        """, (now - tr_cfg.announce_interval,))
 
         top_torrents = db.query("""
             SELECT 
@@ -333,7 +333,7 @@ def stats():
             GROUP BY info_hash
             ORDER BY peer_count DESC
             LIMIT 10
-        """, (TIMENOW - tr_cfg.announce_interval,))
+        """, (now - tr_cfg.announce_interval,))
 
         db_file_path = db.cfg['db_file_path']
         db_size = os.path.getsize(db_file_path) if os.path.exists(db_file_path) else 0
@@ -342,7 +342,7 @@ def stats():
         record_count = total_records[0]['cnt'] if total_records else 0
 
         stats_data = {
-            'server_time': datetime.datetime.fromtimestamp(TIMENOW).strftime('%Y-%m-%d %H:%M:%S'),
+            'server_time': datetime.datetime.fromtimestamp(now).strftime('%Y-%m-%d %H:%M:%S'),
             'uptime': str(datetime.timedelta(seconds=int(time.time() - app.start_time))),
             'announce_interval': f"{tr_cfg.announce_interval} сек.",
             'stats': total_stats[0] if total_stats else {},
@@ -355,7 +355,7 @@ def stats():
         return render_template('stats.html', **stats_data)
 
     except Exception as e:
-        logger.error(f"Ошибка при получении статистики: {e}")
+        logger.error(f"Ошибка при получении статистики: {e}\n{traceback.format_exc()}")
         return Response(
             json.dumps({'error': str(e)}),
             mimetype='application/json'
