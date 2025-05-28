@@ -93,9 +93,7 @@ host = 0.0.0.0
 port = 8080 
 announce_interval = 1800 
 peer_expire_factor = 2 
-ignore_reported_ip = False 
-verify_reported_ip = True 
-allow_internal_ip = False 
+ignore_ip = 192.168.0.0/16 172.16.0.0/12 127.0.0.1
 numwant = 50 
 run_gc_key = gc
 
