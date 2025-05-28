@@ -13,6 +13,7 @@ import datetime
 from functools import wraps
 import traceback
 import threading
+import ipaddress
 
 def get_path(docker_path, local_path):
     return docker_path if os.path.exists(docker_path) else local_path
@@ -95,6 +96,34 @@ def get_real_ip():
         logger.debug(f"Прямое подключение от {request.remote_addr}")
     return request.remote_addr
 
+# --- Новый ignore_ip ---
+def parse_ignore_ip(cfg_value):
+    result = []
+    for part in cfg_value.split():
+        try:
+            if '/' in part:
+                result.append(ipaddress.ip_network(part, strict=False))
+            else:
+                result.append(ipaddress.ip_address(part))
+        except Exception:
+            pass
+    return result
+
+IGNORE_IP_LIST = parse_ignore_ip(config['TRACKER'].get('ignore_ip', ''))
+
+def is_ignored_ip(ip):
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+        for net in IGNORE_IP_LIST:
+            if isinstance(net, (ipaddress.IPv4Network, ipaddress.IPv6Network)):
+                if ip_obj in net:
+                    return True
+            elif ip_obj == net:
+                return True
+        return False
+    except Exception:
+        return False
+
 tr_cfg = Config(
     tr_cache_type=config['CACHE']['type'],
     tr_db_type=config['DB']['type'],
@@ -102,9 +131,6 @@ tr_cfg = Config(
     tr_db=config['DB'],
     announce_interval=int(config['TRACKER']['announce_interval']),
     peer_expire_factor=float(config['TRACKER']['peer_expire_factor']),
-    ignore_reported_ip=config['TRACKER'].getboolean('ignore_reported_ip'),
-    verify_reported_ip=config['TRACKER'].getboolean('verify_reported_ip'),
-    allow_internal_ip=config['TRACKER'].getboolean('allow_internal_ip'),
     numwant=int(config['TRACKER']['numwant']),
     run_gc_key=config['TRACKER']['run_gc_key']
 )
@@ -214,15 +240,9 @@ def announce():
             return Response(bencode({'failure reason': 'Invalid port'}), mimetype='text/plain')
 
         ip = get_real_ip()
-        if not verify_ip(ip):
-            logger.warning(f"Некорректный IP адрес: {ip}")
-            return Response(bencode({'failure reason': 'Invalid IP'}), mimetype='text/plain')
-
-        if not tr_cfg.ignore_reported_ip and 'ip' in request.args:
-            reported_ip = request.args.get('ip')
-            if tr_cfg.verify_reported_ip and verify_ip(reported_ip):
-                ip = reported_ip
-                logger.debug(f"Использован reported_ip: {ip}")
+        if is_ignored_ip(ip):
+            logger.warning(f"IP {ip} из ignore_ip — игнорируется")
+            return Response(bencode({'failure reason': 'IP запрещён'}), mimetype='text/plain')
 
         # --- Проверка блокировки IP/торрента ---
         info_hash_hex = info_hash.hex() if isinstance(info_hash, bytes) else info_hash
