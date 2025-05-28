@@ -18,9 +18,6 @@ class Config:
     tr_db: Dict
     announce_interval: int
     peer_expire_factor: float
-    ignore_reported_ip: bool
-    verify_reported_ip: bool
-    allow_internal_ip: bool
     numwant: int
     run_gc_key: str
 
