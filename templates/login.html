@@ -1,112 +1,30 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Вход в статистику трекера</title>
+    <title>Вход в статистику</title>
     <meta charset="utf-8">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background-color: #f5f5f5;
-        }
-
-        .login-container {
-            background-color: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 400px;
-            margin-bottom: 60px;
-        }
-
-        .login-title {
-            margin: 0 0 20px 0;
-            text-align: center;
-            color: #333;
-        }
-
-        .login-form {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .input-field {
-            padding: 12px;
-            margin: 10px 0;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 16px;
-        }
-
-        .submit-button {
-            padding: 12px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-top: 10px;
-        }
-
-            .submit-button:hover {
-                background-color: #45a049;
-            }
-
-        .error-message {
-            color: #f44336;
-            text-align: center;
-            margin-top: 10px;
-        }
-
-        .footer {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background-color: white;
-            box-shadow: 0 -1px 3px rgba(0,0,0,0.1);
-            padding: 10px 0;
-            text-align: center;
-            font-size: 14px;
-            color: #666;
-        }
-
-            .footer a {
-                color: #4CAF50;
-                text-decoration: none;
-            }
-
-                .footer a:hover {
-                    text-decoration: underline;
-                }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="login-container">
-        <h2 class="login-title">Вход в статистику трекера</h2>
-        <form class="login-form" method="post" action="{{ url_for('login') }}">
-            <input type="text" name="username" placeholder="Логин" class="input-field" required autofocus>
-            <input type="password" name="password" placeholder="Пароль" class="input-field" required>
-            <button type="submit" class="submit-button">Войти</button>
-        </form>
+    <div class="container">
+        <h2>Вход в статистику</h2>
         {% if error %}
-        <p class="error-message">{{ error }}</p>
+        <div class="error">{{ error }}</div>
         {% endif %}
-        {% with messages = get_flashed_messages() %}
-        {% if messages %}
-        <p class="error-message">{{ messages[0] }}</p>
-        {% endif %}
-        {% endwith %}
-    </div>
-    <div class="footer">
-        © {{ current_year }} <a href="https://github.com/Makar-aka" target="_blank">MakarSPB</a>
+        <form method="post">
+            <label>
+                Логин:
+                <input type="text" name="username" required>
+            </label>
+            <label>
+                Пароль:
+                <input type="password" name="password" required>
+            </label>
+            <button type="submit">Войти</button>
+        </form>
+        <div class="copyright">
+            © 2025 <a href="https://github.com/Makar-aka" target="_blank">MakarSPB</a>
+        </div>
     </div>
 </body>
 </html>

@@ -3,37 +3,51 @@
 <head>
     <title>Блоклист</title>
     <meta charset="utf-8">
-    <style>
-        body { font-family: Arial, sans-serif; background: #f5f5f5; }
-        .container { max-width: 700px; margin: 0 auto; background: #fff; padding: 20px; }
-        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-        th, td { padding: 6px 8px; border-bottom: 1px solid #ddd; }
-        th { background: #4CAF50; color: #fff; }
-        .msg { color: green; margin-bottom: 10px; }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<div class="container">
-    <h2>Блоклист IP/торрентов</h2>
-    {% if message %}<div class="msg">{{ message }}</div>{% endif %}
-    <form method="post">
-        <label>IP: <input type="text" name="ip"></label>
-        <label>Info Hash: <input type="text" name="info_hash"></label>
-        <label>Причина: <input type="text" name="reason"></label>
-        <button type="submit">Заблокировать</button>
-    </form>
-    <table>
-        <tr><th>IP</th><th>Info Hash</th><th>Причина</th><th>Дата</th></tr>
-        {% for b in blocks %}
-        <tr>
-            <td>{{ b.ip or '' }}</td>
-            <td>{{ b.info_hash or '' }}</td>
-            <td>{{ b.reason or '' }}</td>
-            <td>{{ b.created_at | datetime }}</td>
-        </tr>
+    <div class="container">
+        <div class="nav-bar">
+            <a href="{{ url_for('stats') }}" class="nav-link">&larr; Назад к статистике</a>
+            <a href="{{ url_for('all_peers') }}" class="nav-link">Все пиры</a>
+        </div>
+        <h2>Блоклист IP/торрентов</h2>
+        {% if message %}<div class="msg">{{ message }}</div>{% endif %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, msg in messages %}
+        <div class="msg">{{ msg }}</div>
         {% endfor %}
-    </table>
-    <a href="{{ url_for('stats') }}">Назад к статистике</a>
-</div>
+        {% endif %}
+        {% endwith %}
+        <form method="post" style="margin-bottom: 15px;">
+            <label>IP: <input type="text" name="ip"></label>
+            <label>Info Hash: <input type="text" name="info_hash"></label>
+            <label>Причина: <input type="text" name="reason"></label>
+            <button type="submit">Заблокировать</button>
+        </form>
+        <table>
+            <tr>
+                <th>IP</th>
+                <th>Info Hash</th>
+                <th>Причина</th>
+                <th>Дата</th>
+                <th>Действие</th>
+            </tr>
+            {% for b in blocks %}
+            <tr>
+                <td>{{ b.ip or '' }}</td>
+                <td>{{ b.info_hash or '' }}</td>
+                <td>{{ b.reason or '' }}</td>
+                <td>{{ b.created_at | datetime }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('unblock_blocklist', block_id=b.id) }}" style="display:inline;">
+                        <button type="submit" class="action-btn" onclick="return confirm('Разблокировать?');">Разблокировать</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
 </body>
 </html>

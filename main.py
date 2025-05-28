@@ -478,6 +478,13 @@ def blocklist():
     blocks = db.query("SELECT * FROM blocklist ORDER BY created_at DESC")
     return render_template('blocklist.html', blocks=blocks, message=message)
 
+@app.route('/blocklist/unblock/<int:block_id>', methods=['POST'])
+@login_required
+def unblock_blocklist(block_id):
+    db.query("DELETE FROM blocklist WHERE id = ?", (block_id,))
+    flash("Запись разблокирована", "success")
+    return redirect(url_for('blocklist'))
+
 # Jinja2 фильтр для форматирования даты
 @app.template_filter('datetime')
 def _jinja2_filter_datetime(ts):
