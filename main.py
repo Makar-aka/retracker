@@ -341,6 +341,21 @@ def stats():
         total_records = db.query("SELECT COUNT(*) as cnt FROM tracker")
         record_count = total_records[0]['cnt'] if total_records else 0
 
+        # Получаем список последних 20 активных пиров
+        active_peers = db.query("""
+            SELECT info_hash, ip, port, update_time
+            FROM tracker
+            WHERE update_time > ?
+            ORDER BY update_time DESC
+            LIMIT 20
+        """, (now - tr_cfg.announce_interval,))
+
+        # Декодируем IP и info_hash для отображения
+        for peer in active_peers:
+            peer['ip'] = decode_ip(peer['ip'])
+            peer['info_hash'] = peer['info_hash'].hex() if isinstance(peer['info_hash'], bytes) else peer['info_hash']
+            peer['update_time'] = datetime.datetime.fromtimestamp(peer['update_time']).strftime('%Y-%m-%d %H:%M:%S')
+
         stats_data = {
             'server_time': datetime.datetime.fromtimestamp(now).strftime('%Y-%m-%d %H:%M:%S'),
             'uptime': str(datetime.timedelta(seconds=int(time.time() - app.start_time))),
@@ -349,6 +364,7 @@ def stats():
             'top_torrents': [dict(t) for t in (top_torrents if top_torrents else [])],
             'db_size': db_size,
             'record_count': record_count,
+            'active_peers': active_peers,
             'current_year': datetime.datetime.now().year
         }
 

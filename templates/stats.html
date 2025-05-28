@@ -159,6 +159,26 @@
             </table>
         </div>
 
+        <div class="info-block">
+            <h2>Активные пиры (последние 20)</h2>
+            <table>
+                <tr>
+                    <th>IP</th>
+                    <th>Port</th>
+                    <th>Info Hash</th>
+                    <th>Последнее обновление</th>
+                </tr>
+                {% for peer in active_peers %}
+                <tr>
+                    <td>{{ peer.ip }}</td>
+                    <td>{{ peer.port }}</td>
+                    <td>{{ peer.info_hash }}</td>
+                    <td>{{ peer.update_time }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
         <div class="copyright">
             © 2025 <a href="https://github.com/Makar-aka" target="_blank">MakarSPB</a>
         </div>
