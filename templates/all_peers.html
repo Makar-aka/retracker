@@ -90,10 +90,26 @@
         <h2>Все пиры (страница {{ page }} из {{ total_pages }})</h2>
         <table>
             <tr>
-                <th>IP</th>
-                <th>Port</th>
-                <th>Info Hash</th>
-                <th>Последнее обновление</th>
+                <th>
+                    <a href="{{ url_for('all_peers', page=1, sort_by='ip', sort='asc' if sort_by != 'ip' or sort == 'desc' else 'desc') }}">
+                        IP{% if sort_by == 'ip' %} {% if sort == 'asc' %}↑{% else %}↓{% endif %}{% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="{{ url_for('all_peers', page=1, sort_by='port', sort='asc' if sort_by != 'port' or sort == 'desc' else 'desc') }}">
+                        Port{% if sort_by == 'port' %} {% if sort == 'asc' %}↑{% else %}↓{% endif %}{% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="{{ url_for('all_peers', page=1, sort_by='info_hash', sort='asc' if sort_by != 'info_hash' or sort == 'desc' else 'desc') }}">
+                        Info Hash{% if sort_by == 'info_hash' %} {% if sort == 'asc' %}↑{% else %}↓{% endif %}{% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="{{ url_for('all_peers', page=1, sort_by='update_time', sort='asc' if sort_by != 'update_time' or sort == 'desc' else 'desc') }}">
+                        Последнее обновление{% if sort_by == 'update_time' %} {% if sort == 'asc' %}↑{% else %}↓{% endif %}{% endif %}
+                    </a>
+                </th>
             </tr>
             {% for peer in peers %}
             <tr>
@@ -106,14 +122,14 @@
         </table>
         <div class="pagination">
             {% if page > 1 %}
-            <a href="{{ url_for('all_peers', page=1) }}">&laquo; Первая</a>
-            <a href="{{ url_for('all_peers', page=page-1) }}">&lt;</a>
+            <a href="{{ url_for('all_peers', page=1, sort_by=sort_by, sort=sort) }}">&laquo; Первая</a>
+            <a href="{{ url_for('all_peers', page=page-1, sort_by=sort_by, sort=sort) }}">&lt;</a>
             {% endif %}
             {% for p in range(1, total_pages+1) %}
             {% if p == page %}
             <span class="active">{{ p }}</span>
             {% elif p <= 2 or p > total_pages-2 or (p >= page-2 and p <= page+2) %}
-            <a href="{{ url_for('all_peers', page=p) }}">{{ p }}</a>
+            <a href="{{ url_for('all_peers', page=p, sort_by=sort_by, sort=sort) }}">{{ p }}</a>
             {% elif p == 3 and page > 5 %}
             ...
             {% elif p == total_pages-2 and page < total_pages-4 %}
@@ -121,8 +137,8 @@
             {% endif %}
             {% endfor %}
             {% if page < total_pages %}
-            <a href="{{ url_for('all_peers', page=page+1) }}">&gt;</a>
-            <a href="{{ url_for('all_peers', page=total_pages) }}">Последняя &raquo;</a>
+            <a href="{{ url_for('all_peers', page=page+1, sort_by=sort_by, sort=sort) }}">&gt;</a>
+            <a href="{{ url_for('all_peers', page=total_pages, sort_by=sort_by, sort=sort) }}">Последняя &raquo;</a>
             {% endif %}
         </div>
         <div class="copyright">

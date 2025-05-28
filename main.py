@@ -384,14 +384,27 @@ def all_peers():
         per_page = 20
         offset = (page - 1) * per_page
 
+        # Получаем параметры сортировки
+        sort_by = request.args.get('sort_by', 'ip')
+        sort = request.args.get('sort', 'desc')
+        # Разрешённые поля для сортировки
+        allowed_sort_by = {
+            'ip': 'ip',
+            'port': 'port',
+            'info_hash': 'info_hash',
+            'update_time': 'update_time'
+        }
+        sort_by_sql = allowed_sort_by.get(sort_by, 'ip')
+        sort_sql = 'ASC' if sort == 'asc' else 'DESC'
+
         total_peers = db.query("SELECT COUNT(*) as cnt FROM tracker")
         total_count = total_peers[0]['cnt'] if total_peers else 0
         total_pages = (total_count + per_page - 1) // per_page
 
-        peers = db.query("""
+        peers = db.query(f"""
             SELECT info_hash, ip, port, update_time
             FROM tracker
-            ORDER BY update_time DESC
+            ORDER BY {sort_by_sql} {sort_sql}
             LIMIT ? OFFSET ?
         """, (per_page, offset))
 
@@ -404,7 +417,9 @@ def all_peers():
             'all_peers.html',
             peers=peers,
             page=page,
-            total_pages=total_pages
+            total_pages=total_pages,
+            sort=sort,
+            sort_by=sort_by
         )
     except Exception as e:
         logger.error(f"Ошибка при получении списка всех пиров: {e}\n{traceback.format_exc()}")
