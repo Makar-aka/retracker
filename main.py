@@ -376,6 +376,39 @@ def stats():
             json.dumps({'error': str(e)}),
             mimetype='application/json'
         ), 500
+@app.route('/all_peers')
+@login_required
+def all_peers():
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = 20
+        offset = (page - 1) * per_page
+
+        total_peers = db.query("SELECT COUNT(*) as cnt FROM tracker")
+        total_count = total_peers[0]['cnt'] if total_peers else 0
+        total_pages = (total_count + per_page - 1) // per_page
+
+        peers = db.query("""
+            SELECT info_hash, ip, port, update_time
+            FROM tracker
+            ORDER BY update_time DESC
+            LIMIT ? OFFSET ?
+        """, (per_page, offset))
+
+        for peer in peers:
+            peer['ip'] = decode_ip(peer['ip'])
+            peer['info_hash'] = peer['info_hash'].hex() if isinstance(peer['info_hash'], bytes) else peer['info_hash']
+            peer['update_time'] = datetime.datetime.fromtimestamp(peer['update_time']).strftime('%Y-%m-%d %H:%M:%S')
+
+        return render_template(
+            'all_peers.html',
+            peers=peers,
+            page=page,
+            total_pages=total_pages
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка всех пиров: {e}\n{traceback.format_exc()}")
+        return Response("Ошибка при получении списка пиров", mimetype='text/plain'), 500
 
 if __name__ == '__main__':
     host = config['TRACKER'].get('host', '0.0.0.0')
