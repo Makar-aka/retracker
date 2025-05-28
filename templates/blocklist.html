@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Блоклист</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; background: #f5f5f5; }
+        .container { max-width: 700px; margin: 0 auto; background: #fff; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { padding: 6px 8px; border-bottom: 1px solid #ddd; }
+        th { background: #4CAF50; color: #fff; }
+        .msg { color: green; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Блоклист IP/торрентов</h2>
+    {% if message %}<div class="msg">{{ message }}</div>{% endif %}
+    <form method="post">
+        <label>IP: <input type="text" name="ip"></label>
+        <label>Info Hash: <input type="text" name="info_hash"></label>
+        <label>Причина: <input type="text" name="reason"></label>
+        <button type="submit">Заблокировать</button>
+    </form>
+    <table>
+        <tr><th>IP</th><th>Info Hash</th><th>Причина</th><th>Дата</th></tr>
+        {% for b in blocks %}
+        <tr>
+            <td>{{ b.ip or '' }}</td>
+            <td>{{ b.info_hash or '' }}</td>
+            <td>{{ b.reason or '' }}</td>
+            <td>{{ b.created_at | datetime }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    <a href="{{ url_for('stats') }}">Назад к статистике</a>
+</div>
+</body>
+</html>

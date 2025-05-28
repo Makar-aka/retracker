@@ -12,6 +12,7 @@ import json
 import datetime
 from functools import wraps
 import traceback
+import threading
 
 def get_path(docker_path, local_path):
     return docker_path if os.path.exists(docker_path) else local_path
@@ -128,10 +129,38 @@ default_cfg = {
         left INTEGER DEFAULT 0,
         update_time INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (info_hash, ip, port)
-    )'''
+    );
+    CREATE TABLE IF NOT EXISTS blocklist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip TEXT,
+        info_hash TEXT,
+        reason TEXT,
+        created_at INTEGER
+    );'''
 }
 db = SQLiteCommon({**default_cfg, **tr_cfg.tr_db})
 logger.info(f"База данных SQLite инициализирована: {default_cfg['db_file_path']}")
+
+# --- Автоматическая очистка "мертвых" пиров ---
+def cleanup_dead_peers():
+    while True:
+        try:
+            now = int(time.time())
+            announce_interval = max(int(tr_cfg.announce_interval), 60)
+            expire_factor = max(float(tr_cfg.peer_expire_factor), 2)
+            peer_expire_time = now - int(announce_interval * expire_factor)
+            db.query("DELETE FROM tracker WHERE update_time < ?", (peer_expire_time,))
+            logger.info("Автоматическая очистка мертвых пиров выполнена")
+        except Exception as e:
+            logger.error(f"Ошибка автоматической очистки пиров: {e}")
+        time.sleep(int(config['TRACKER'].get('peer_cleanup_period', 600)))
+
+def is_blocked(ip, info_hash):
+    res = db.query(
+        "SELECT 1 FROM blocklist WHERE (ip = ? AND ip != '') OR (info_hash = ? AND info_hash != '') LIMIT 1",
+        (ip, info_hash)
+    )
+    return bool(res)
 
 @app.route('/status')
 def status():
@@ -194,6 +223,12 @@ def announce():
             if tr_cfg.verify_reported_ip and verify_ip(reported_ip):
                 ip = reported_ip
                 logger.debug(f"Использован reported_ip: {ip}")
+
+        # --- Проверка блокировки IP/торрента ---
+        info_hash_hex = info_hash.hex() if isinstance(info_hash, bytes) else info_hash
+        if is_blocked(ip, info_hash_hex):
+            logger.warning(f"Блокировка: {ip} или {info_hash_hex}")
+            return Response(bencode({'failure reason': 'IP или торрент заблокирован'}), mimetype='text/plain')
 
         event = request.args.get('event', '')
         uploaded = int(request.args.get('uploaded', 0))
@@ -376,6 +411,7 @@ def stats():
             json.dumps({'error': str(e)}),
             mimetype='application/json'
         ), 500
+
 @app.route('/all_peers')
 @login_required
 def all_peers():
@@ -425,7 +461,37 @@ def all_peers():
         logger.error(f"Ошибка при получении списка всех пиров: {e}\n{traceback.format_exc()}")
         return Response("Ошибка при получении списка пиров", mimetype='text/plain'), 500
 
+@app.route('/blocklist', methods=['GET', 'POST'])
+@login_required
+def blocklist():
+    message = None
+    if request.method == 'POST':
+        ip = request.form.get('ip', '').strip()
+        info_hash = request.form.get('info_hash', '').strip()
+        reason = request.form.get('reason', '').strip()
+        if ip or info_hash:
+            db.query(
+                "INSERT INTO blocklist (ip, info_hash, reason, created_at) VALUES (?, ?, ?, ?)",
+                (ip if ip else None, info_hash if info_hash else None, reason, int(time.time()))
+            )
+            message = "Добавлено в блоклист"
+    blocks = db.query("SELECT * FROM blocklist ORDER BY created_at DESC")
+    return render_template('blocklist.html', blocks=blocks, message=message)
+
+# Jinja2 фильтр для форматирования даты
+@app.template_filter('datetime')
+def _jinja2_filter_datetime(ts):
+    if not ts:
+        return ''
+    try:
+        return datetime.datetime.fromtimestamp(int(ts)).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return str(ts)
+
 if __name__ == '__main__':
+    # Запуск фоновой очистки мертвых пиров
+    threading.Thread(target=cleanup_dead_peers, daemon=True).start()
+
     host = config['TRACKER'].get('host', '0.0.0.0')
     port = config['TRACKER'].getint('port', 8080)
 
