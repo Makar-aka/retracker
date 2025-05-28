@@ -10,7 +10,7 @@ class SQLiteCommon:
         self.cfg = config
         self.random_fn = "RANDOM()"
         with self.get_connection() as conn:
-            conn.execute(self.cfg['table_schema'])
+            conn.executescript(self.cfg['table_schema'])
             conn.commit()
 
     @contextmanager
