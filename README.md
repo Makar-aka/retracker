@@ -27,7 +27,8 @@ retracker — это легковесный BitTorrent-трекер на Flask.
 
 ### 1. Клонирование репозитория
 ```
-git clone https://github.com/Makar-aka/retracker.git cd retracker
+git clone https://github.com/Makar-aka/retracker.git
+cd retracker
 ```
 ### 2. Настройка конфигурации
 
