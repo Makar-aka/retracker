@@ -75,7 +75,7 @@ secret_key = ваш_рандомный_ключик_для_сессий_авто
 [LOGGING]
 log_file = tracker.log 
 level = INFO 
-format = %(asctime)s [%(levelname)s] %(message)s 
+format = %%(asctime)s [%%(levelname)s] %%(message)s 
 console_output = True 
 max_bytes = 5242880 
 backup_count = 5 
