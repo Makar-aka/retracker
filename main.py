@@ -1,7 +1,6 @@
 from flask import Flask, request, Response, render_template, redirect, url_for, session, flash
 from tracker import *
 from db_handlers import SQLiteCommon
-import configparser
 from logging.handlers import RotatingFileHandler
 import logging
 import os
@@ -14,17 +13,69 @@ from functools import wraps
 import traceback
 import threading
 import ipaddress
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения из .env
+load_dotenv()
 
 def get_path(docker_path, local_path):
     return docker_path if os.path.exists(docker_path) else local_path
 
-CONFIG_PATH = get_path('/config/config.ini', os.path.join('config', 'config.ini'))
 DATA_DIR = get_path('/data', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data'))
 TEMPLATES_DIR = get_path('/templates', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates'))
 
-config = configparser.ConfigParser()
-config.read(CONFIG_PATH)
-SECRET_KEY = config.get('FLASK', 'secret_key', fallback='your-very-secret-key')
+# --- Получение настроек из переменных окружения с дефолтами ---
+SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'your-very-secret-key')
+
+CACHE_TYPE = os.getenv('CACHE_TYPE', 'sqlite')
+CACHE_DB_FILE_PATH = os.getenv('CACHE_DB_FILE_PATH', os.path.join(DATA_DIR, 'cache.sqlite'))
+
+DB_TYPE = os.getenv('DB_TYPE', 'sqlite')
+DB_FILE_PATH = os.getenv('DB_FILE_PATH', os.path.join(DATA_DIR, 'tracker.sqlite'))
+DB_TABLE_NAME = os.getenv('DB_TABLE_NAME', 'tracker')
+DB_TABLE_SCHEMA = os.getenv('DB_TABLE_SCHEMA', '''
+    CREATE TABLE IF NOT EXISTS tracker (
+        info_hash CHAR(20) NOT NULL,
+        ip CHAR(8) NOT NULL,
+        port INTEGER NOT NULL DEFAULT 0,
+        left INTEGER DEFAULT 0,
+        update_time INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (info_hash, ip, port)
+    );
+    CREATE TABLE IF NOT EXISTS blocklist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip TEXT,
+        info_hash TEXT,
+        reason TEXT,
+        created_at INTEGER
+    );
+''')
+
+TRACKER_MODE = os.getenv('TRACKER_MODE', 'direct')
+TRACKER_TRUSTED_PROXIES = os.getenv('TRACKER_TRUSTED_PROXIES', '127.0.0.1').split(',')
+TRACKER_USE_X_REAL_IP = os.getenv('TRACKER_USE_X_REAL_IP', 'true').lower() == 'true'
+TRACKER_USE_X_FORWARDED_FOR = os.getenv('TRACKER_USE_X_FORWARDED_FOR', 'true').lower() == 'true'
+TRACKER_HOST = os.getenv('TRACKER_HOST', '0.0.0.0')
+TRACKER_PORT = int(os.getenv('TRACKER_PORT', 8080))
+TRACKER_ANNOUNCE_INTERVAL = int(os.getenv('TRACKER_ANNOUNCE_INTERVAL', 1800))
+TRACKER_PEER_EXPIRE_FACTOR = float(os.getenv('TRACKER_PEER_EXPIRE_FACTOR', 2.5))
+TRACKER_IGNORE_IP = os.getenv('TRACKER_IGNORE_IP', '192.168.0.0/16 172.16.0.0/12 127.0.0.1')
+TRACKER_NUMWANT = int(os.getenv('TRACKER_NUMWANT', 50))
+TRACKER_RUN_GC_KEY = os.getenv('TRACKER_RUN_GC_KEY', 'gc')
+TRACKER_PEER_CLEANUP_PERIOD = int(os.getenv('TRACKER_PEER_CLEANUP_PERIOD', 600))
+TRACKER_DEBUG = os.getenv('TRACKER_DEBUG', 'true').lower() == 'true'
+TRACKER_USE_RELOADER = os.getenv('TRACKER_USE_RELOADER', 'true').lower() == 'true'
+
+LOGGING_LEVEL = os.getenv('LOGGING_LEVEL', 'INFO')
+LOGGING_LOG_FILE = os.getenv('LOGGING_LOG_FILE', os.path.join(DATA_DIR, 'tracker.log'))
+LOGGING_MAX_BYTES = int(os.getenv('LOGGING_MAX_BYTES', 5242880))
+LOGGING_BACKUP_COUNT = int(os.getenv('LOGGING_BACKUP_COUNT', 5))
+LOGGING_FORMAT = os.getenv('LOGGING_FORMAT', '%(asctime)s [%(levelname)s] %(message)s')
+LOGGING_CONSOLE_OUTPUT = os.getenv('LOGGING_CONSOLE_OUTPUT', 'true').lower() == 'true'
+LOGGING_CLEAR_ON_START = os.getenv('LOGGING_CLEAR_ON_START', 'false').lower() == 'true'
+
+STATS_ACCESS_USERNAME = os.getenv('STATS_ACCESS_USERNAME', 'admin')
+STATS_ACCESS_PASSWORD = os.getenv('STATS_ACCESS_PASSWORD', 'admin')
 
 app = Flask(__name__, template_folder=TEMPLATES_DIR)
 app.secret_key = SECRET_KEY
@@ -33,15 +84,15 @@ app.start_time = time.time()
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
-log_file = config['LOGGING'].get('log_file', os.path.join(DATA_DIR, 'tracker.log'))
+log_file = LOGGING_LOG_FILE
 log_dir = os.path.dirname(log_file)
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-if config['LOGGING'].getboolean('clear_on_start', False) and os.path.exists(log_file):
+if LOGGING_CLEAR_ON_START and os.path.exists(log_file):
     try:
         os.remove(log_file)
-        for i in range(int(config['LOGGING'].get('backup_count', 5))):
+        for i in range(LOGGING_BACKUP_COUNT):
             backup = f"{log_file}.{i+1}"
             if os.path.exists(backup):
                 os.remove(backup)
@@ -51,28 +102,28 @@ if config['LOGGING'].getboolean('clear_on_start', False) and os.path.exists(log_
 handlers = []
 file_handler = RotatingFileHandler(
     filename=log_file,
-    maxBytes=int(config['LOGGING'].get('max_bytes', 5242880)),
-    backupCount=int(config['LOGGING'].get('backup_count', 5)),
+    maxBytes=LOGGING_MAX_BYTES,
+    backupCount=LOGGING_BACKUP_COUNT,
     encoding='utf-8'
 )
-file_handler.setFormatter(logging.Formatter(config['LOGGING'].get('format', '%(asctime)s [%(levelname)s] %(message)s')))
+file_handler.setFormatter(logging.Formatter(LOGGING_FORMAT))
 handlers.append(file_handler)
 
-if config['LOGGING'].getboolean('console_output', True):
+if LOGGING_CONSOLE_OUTPUT:
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter(config['LOGGING'].get('format', '%(asctime)s] [%(levelname)s] %(message)s')))
+    console_handler.setFormatter(logging.Formatter(LOGGING_FORMAT))
     handlers.append(console_handler)
 
 logging.basicConfig(
-    level=getattr(logging, config['LOGGING'].get('level', 'INFO').upper()),
+    level=getattr(logging, LOGGING_LEVEL.upper()),
     handlers=handlers
 )
 
 logger = logging.getLogger(__name__)
 logger.info("Логирование инициализировано")
 
-mode = config['TRACKER'].get('mode', 'direct')
-TRUSTED_PROXIES = config['TRACKER'].get('trusted_proxies', '127.0.0.1').split(',')
+mode = TRACKER_MODE
+TRUSTED_PROXIES = [ip.strip() for ip in TRACKER_TRUSTED_PROXIES]
 logger.info(f"Режим работы: {mode}")
 logger.info(f"Доверенные прокси: {TRUSTED_PROXIES}")
 
@@ -81,12 +132,12 @@ def get_real_ip():
         logger.debug("Headers: %s", dict(request.headers))
         logger.debug("Remote addr: %s", request.remote_addr)
         if request.remote_addr in TRUSTED_PROXIES:
-            if config['TRACKER'].getboolean('use_x_real_ip', True):
+            if TRACKER_USE_X_REAL_IP:
                 real_ip = request.headers.get('X-Real-IP')
                 if real_ip and verify_ip(real_ip):
                     logger.debug(f"Использован X-Real-IP: {real_ip}")
                     return real_ip
-            if config['TRACKER'].getboolean('use_x_forwarded_for', True):
+            if TRACKER_USE_X_FORWARDED_FOR:
                 forwarded_for = request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
                 if forwarded_for and verify_ip(forwarded_for):
                     logger.debug(f"Использован X-Forwarded-For: {forwarded_for}")
@@ -96,7 +147,6 @@ def get_real_ip():
         logger.debug(f"Прямое подключение от {request.remote_addr}")
     return request.remote_addr
 
-# --- Новый ignore_ip ---
 def parse_ignore_ip(cfg_value):
     result = []
     for part in cfg_value.split():
@@ -109,7 +159,7 @@ def parse_ignore_ip(cfg_value):
             pass
     return result
 
-IGNORE_IP_LIST = parse_ignore_ip(config['TRACKER'].get('ignore_ip', ''))
+IGNORE_IP_LIST = parse_ignore_ip(TRACKER_IGNORE_IP)
 
 def is_ignored_ip(ip):
     try:
@@ -125,14 +175,14 @@ def is_ignored_ip(ip):
         return False
 
 tr_cfg = Config(
-    tr_cache_type=config['CACHE']['type'],
-    tr_db_type=config['DB']['type'],
-    tr_cache=config['CACHE'],
-    tr_db=config['DB'],
-    announce_interval=int(config['TRACKER']['announce_interval']),
-    peer_expire_factor=float(config['TRACKER']['peer_expire_factor']),
-    numwant=int(config['TRACKER']['numwant']),
-    run_gc_key=config['TRACKER']['run_gc_key']
+    tr_cache_type=CACHE_TYPE,
+    tr_db_type=DB_TYPE,
+    tr_cache={'db_file_path': CACHE_DB_FILE_PATH},
+    tr_db={'db_file_path': DB_FILE_PATH, 'table_name': DB_TABLE_NAME, 'table_schema': DB_TABLE_SCHEMA},
+    announce_interval=TRACKER_ANNOUNCE_INTERVAL,
+    peer_expire_factor=TRACKER_PEER_EXPIRE_FACTOR,
+    numwant=TRACKER_NUMWANT,
+    run_gc_key=TRACKER_RUN_GC_KEY
 )
 
 logger.info(f"Инициализация кэша типа: {tr_cfg.tr_cache_type}")
@@ -146,28 +196,13 @@ if tr_cfg.tr_db_type != 'sqlite':
     raise ValueError('Only SQLite database is supported')
 
 default_cfg = {
-    'db_file_path': os.path.join(DATA_DIR, 'tracker.sqlite'),
-    'table_name': 'tracker',
-    'table_schema': '''CREATE TABLE IF NOT EXISTS tracker (
-        info_hash CHAR(20) NOT NULL,
-        ip CHAR(8) NOT NULL,
-        port INTEGER NOT NULL DEFAULT 0,
-        left INTEGER DEFAULT 0,
-        update_time INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (info_hash, ip, port)
-    );
-    CREATE TABLE IF NOT EXISTS blocklist (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ip TEXT,
-        info_hash TEXT,
-        reason TEXT,
-        created_at INTEGER
-    );'''
+    'db_file_path': DB_FILE_PATH,
+    'table_name': DB_TABLE_NAME,
+    'table_schema': DB_TABLE_SCHEMA
 }
 db = SQLiteCommon({**default_cfg, **tr_cfg.tr_db})
-logger.info(f"База данных SQLite инициализирована: {default_cfg['db_file_path']}")
+logger.info(f"База данных SQLite инициализирована: {DB_FILE_PATH}")
 
-# --- Автоматическая очистка "мертвых" пиров ---
 def cleanup_dead_peers():
     while True:
         try:
@@ -179,7 +214,7 @@ def cleanup_dead_peers():
             logger.info("Автоматическая очистка мертвых пиров выполнена")
         except Exception as e:
             logger.error(f"Ошибка автоматической очистки пиров: {e}")
-        time.sleep(int(config['TRACKER'].get('peer_cleanup_period', 600)))
+        time.sleep(TRACKER_PEER_CLEANUP_PERIOD)
 
 def is_blocked(ip, info_hash):
     res = db.query(
@@ -244,7 +279,6 @@ def announce():
             logger.warning(f"IP {ip} из ignore_ip — игнорируется")
             return Response(bencode({'failure reason': 'IP запрещён'}), mimetype='text/plain')
 
-        # --- Проверка блокировки IP/торрента ---
         info_hash_hex = info_hash.hex() if isinstance(info_hash, bytes) else info_hash
         if is_blocked(ip, info_hash_hex):
             logger.warning(f"Блокировка: {ip} или {info_hash_hex}")
@@ -340,9 +374,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '')
         password = request.form.get('password', '')
-        expected_username = config['STATS'].get('access_username')
-        expected_password = config['STATS'].get('access_password')
-        if username == expected_username and password == expected_password:
+        if username == STATS_ACCESS_USERNAME and password == STATS_ACCESS_PASSWORD:
             session['logged_in'] = True
             return redirect(url_for('stats'))
         else:
@@ -396,7 +428,6 @@ def stats():
         total_records = db.query("SELECT COUNT(*) as cnt FROM tracker")
         record_count = total_records[0]['cnt'] if total_records else 0
 
-        # Получаем список последних 20 активных пиров
         active_peers = db.query("""
             SELECT info_hash, ip, port, update_time
             FROM tracker
@@ -405,7 +436,6 @@ def stats():
             LIMIT 20
         """, (now - tr_cfg.announce_interval,))
 
-        # Декодируем IP и info_hash для отображения
         for peer in active_peers:
             peer['ip'] = decode_ip(peer['ip'])
             peer['info_hash'] = peer['info_hash'].hex() if isinstance(peer['info_hash'], bytes) else peer['info_hash']
@@ -440,10 +470,8 @@ def all_peers():
         per_page = 20
         offset = (page - 1) * per_page
 
-        # Получаем параметры сортировки
         sort_by = request.args.get('sort_by', 'ip')
         sort = request.args.get('sort', 'desc')
-        # Разрешённые поля для сортировки
         allowed_sort_by = {
             'ip': 'ip',
             'port': 'port',
@@ -505,7 +533,6 @@ def unblock_blocklist(block_id):
     flash("Запись разблокирована", "success")
     return redirect(url_for('blocklist'))
 
-# Jinja2 фильтр для форматирования даты
 @app.template_filter('datetime')
 def _jinja2_filter_datetime(ts):
     if not ts:
@@ -516,11 +543,7 @@ def _jinja2_filter_datetime(ts):
         return str(ts)
 
 if __name__ == '__main__':
-    # Запуск фоновой очистки мертвых пиров
     threading.Thread(target=cleanup_dead_peers, daemon=True).start()
-
-    host = config['TRACKER'].get('host', '0.0.0.0')
-    port = config['TRACKER'].getint('port', 8080)
 
     def is_valid_ip(ip):
         try:
@@ -528,6 +551,9 @@ if __name__ == '__main__':
             return len(parts) == 4 and all(0 <= int(part) <= 255 for part in parts)
         except (AttributeError, TypeError, ValueError):
             return False
+
+    host = TRACKER_HOST
+    port = TRACKER_PORT
 
     if host != '0.0.0.0' and not is_valid_ip(host):
         try:
@@ -540,6 +566,6 @@ if __name__ == '__main__':
     app.run(
         host=host,
         port=port,
-        debug=config['TRACKER'].getboolean('debug', True),
-        use_reloader=config['TRACKER'].getboolean('use_reloader', True)
+        debug=TRACKER_DEBUG,
+        use_reloader=TRACKER_USE_RELOADER
     )
