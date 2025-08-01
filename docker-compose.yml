@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  tracker:
+    build:
+      context: https://github.com/Makar-aka/retracker.git
+      dockerfile: Dockerfile
+    container_name: tracker
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./config:/config
+      - ./data:/data
+      - ./templates:/templates
+    environment:
+      - TZ=Europe/Moscow
