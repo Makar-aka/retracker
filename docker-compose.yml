@@ -15,5 +15,5 @@ services:
       - ./templates:/templates
     environment:
       - TZ=Europe/Moscow
--   env_file:
-  - .env
+    env_file:
+      - .env
