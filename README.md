@@ -9,9 +9,9 @@ retracker — это легковесный BitTorrent-трекер на Flask.
 
 - BitTorrent-трекер с поддержкой announce/scrape
 - Веб-интерфейс статистики с авторизацией (Flask-сессии)
-- Гибкая настройка через config.ini
+- Гибкая настройка через переменные окружения и `.env`
 - Логирование с ротацией
-- Универсальный запуск: консоль, systemd
+- Универсальный запуск: консоль, systemd, Docker/Docker Compose
 - Поддержка работы в режимах **proxy** и **direct**
 ---
 
@@ -34,7 +34,7 @@ cd retracker
 
 Скопируйте пример конфига и отредактируйте под себя:
 
-cp config/config_example.ini config/config.ini
+cp .env.example .env
 
 
 **Обязательные параметры:**
@@ -46,20 +46,14 @@ cp config/config_example.ini config/config.ini
 
 ## Режимы работы: proxy и direct
 
-Трекер может работать в двух режимах, которые задаются параметром `mode` в секции `[TRACKER]` файла `config.ini`:
+Трекер может работать в двух режимах, которые задаются переменной окружения `TRACKER_MODE`:
 
 - `direct` — прямое подключение, IP-адрес клиента берётся из стандартного соединения (по умолчанию).
 - `proxy` — используется, если трекер работает за обратным прокси (например, nginx, haproxy). В этом режиме трекер определяет реальный IP клиента по заголовкам `X-Real-IP` и/или `X-Forwarded-For`.
 
-Если трекер работает за обратным прокси-сервером, то все входящие подключения для приложения будут приходить с одного и того же IP-адреса (адреса прокси). В этом случае невозможно определить реальный IP-адрес пользователя стандартным способом.  
-Режим `proxy` позволяет получать настоящий IP-адрес клиента из специальных HTTP-заголовков, которые прокси-сервер добавляет к каждому запросу. Это важно для корректной работы трекера, учёта пиров и предотвращения злоупотреблений.
-
 Используйте режим `proxy`, если:
 - Вы запускаете трекер за nginx, haproxy, cloudflare или другим обратным прокси.
 - Вам нужно видеть реальные IP-адреса пользователей, а не адрес прокси.
-
-- Чтобы режим `proxy` работал корректно, прокси-сервер должен передавать реальный IP клиента в заголовках\
-см. доки по настройке вашего прокси-сервера.
 
 Используйте режим `direct`, если:
 - Трекер доступен напрямую, без прокси-сервера.
@@ -67,39 +61,28 @@ cp config/config_example.ini config/config.ini
  
 ## Конфигурация
 
-Все настройки — в `config/config.ini`.  
-Пример секций:
+**Все настройки теперь задаются через переменные окружения или файл `.env`.**  
+Пример файла: [.env.example](./.env.example)
 ```ini
-[FLASK] 
-secret_key = ваш_рандомный_ключик_для_сессий_авторизации
-[LOGGING]
-log_file = tracker.log 
-level = INFO 
-format = %%(asctime)s [%%(levelname)s] %%(message)s 
-console_output = True 
-max_bytes = 5242880 
-backup_count = 5 
-clear_on_start = False
-
-[TRACKER] 
-host = 0.0.0.0 
-port = 8080 
-announce_interval = 1800 
-peer_expire_factor = 2 
-ignore_ip = 192.168.0.0/16 172.16.0.0/12 127.0.0.1
-numwant = 50 
-run_gc_key = gc
-
-[CACHE] 
-type = sqlite
-
-[DB] 
-type = sqlite
-
-[STATS] 
-access_username = admin 
-access_password = password
+FLASK_SECRET_KEY=your-very-secret-key
+STATS_ACCESS_USERNAME=admin
+STATS_ACCESS_PASSWORD=admin 
+TRACKER_MODE=direct 
+TRACKER_HOST=0.0.0.0 
+TRACKER_PORT=8088 
+TRACKER_ANNOUNCE_INTERVAL=1800 
+TRACKER_PEER_EXPIRE_FACTOR=2.5 
+TRACKER_IGNORE_IP=192.168.0.0/16 172.16.0.0/12 127.0.0.1 
+TRACKER_NUMWANT=50 
+TRACKER_RUN_GC_KEY=gc 
+TRACKER_PEER_CLEANUP_PERIOD=600 
+LOGGING_LEVEL=INFO 
+LOGGING_LOG_FILE=/data/tracker.log 
+LOGGING_CONSOLE_OUTPUT=true
 ```
+
+**Все доступные переменные и их значения смотрите в `.env.example`.**
+
 ### Пояснение некоторыйх параметров:
 announce_interval = 1800\
 Интервал анонсирования (в секундах).\
@@ -150,6 +133,26 @@ sudo systemctl enable --now retracker
 
 - Откройте `http://ваш_сервер/stat` в браузере.
 - Введите логин и пароль из секции `[STATS]` файла config.ini.
+
+---
+## Запуск через Docker Compose
+
+1. Скопируйте и настройте `.env`:
+```
+cp .env.example .env
+```
+2. Запустите:
+```
+docker-compose up --build
+
+```
+
+---
+
+## Вход в статистику
+
+- Откройте `http://ваш_сервер:порт/stat` в браузере.
+- Введите логин и пароль из `.env` (`STATS_ACCESS_USERNAME` и `STATS_ACCESS_PASSWORD`).
 
 ---
 
